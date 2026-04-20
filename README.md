@@ -33,6 +33,13 @@ A Material 3 YouTube Music client for Android
 - Personalized quick picks
 - Discord Rich Presence support
 
+## What's New in this Custom Version
+This fork includes several critical bug fixes and powerful new features aimed at stability and local music backup:
+- **YouTube Playback Fix:** Resolved the pervasive "unsupported device" or "YouTube is no longer supported" errors by implementing multi-client fallback strategies (using `WEB_REMIX` and `TVHTML5` validation).
+- **Search "All" Tab Fix:** Fixed the infinite loading spinner when searching for songs in the "All" tab by bypassing YouTube's structurally unreliable JSON response and routing searches to the stable "Songs" API.
+- **Direct Local Sync & Export:** Whenever you download a song, the `.m4a` audio file and `.lrc` lyrics file are automatically and natively exported to your phone's public `Downloads/InnerTune/` folder.
+- **One-Tap Library Restoration:** If you ever uninstall and reinstall the app, you can simply go to **Settings > Backup & Restore > Restore Library from Downloads**. The app will scan the `Downloads/InnerTune` folder and instantly rebuild your entire music library and offline lyrics without re-downloading anything!
+
 ## Screenshots
 
 <p float="left">
