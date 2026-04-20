@@ -15,49 +15,103 @@ import java.time.LocalDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * LibraryScanner uses Android's Storage Access Framework (SAF) to scan a user-selected folder.
- * SAF bypasses all scoped storage restrictions — the user explicitly grants folder access via
- * the system folder picker, which works reliably across reinstalls and all Android versions.
- *
- * File naming convention: [YoutubeID] Artist - Title.m4a
- * YouTube IDs are exactly 11 alphanumeric characters (A-Z, a-z, 0-9, _, -)
- */
 @Singleton
 class LibraryScanner @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: MusicDatabase
 ) {
-    // Matches: [YouTubeID] Artist Name - Song Title.m4a
     private val FILE_PATTERN = Regex("""^\[([A-Za-z0-9_-]{11})\] (.+?) - (.+?)\.m4a$""")
     private val LRC_ID_PATTERN = Regex("""^\[([A-Za-z0-9_-]{11})\]""")
 
-    /**
-     * Scans the folder at [folderUri] (obtained via ACTION_OPEN_DOCUMENT_TREE).
-     * Returns the number of newly imported songs.
-     */
     suspend fun scanFolder(folderUri: Uri): Int = withContext(Dispatchers.IO) {
+        val logBuilder = StringBuilder()
+        logBuilder.append("=== SCAN STARTED ===\n")
+        logBuilder.append("Uri: $folderUri\n")
+        
+        var importedCount = 0
+        var rootDir: DocumentFile? = null
+
         try {
+            try {
+                val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(folderUri, flags)
+                logBuilder.append("- Persistable permission taken\n")
+            } catch (e: Exception) { 
+                logBuilder.append("- Failed persistable permission: ${e.message}\n")
+            }
+
+            rootDir = DocumentFile.fromTreeUri(context, folderUri)
+            if (rootDir == null) {
+                logBuilder.append("- rootDir == null\n")
+                return@withContext 0
+            }
+            logBuilder.append("- rootDir name: ${rootDir.name}, canRead: ${rootDir.canRead()}, canWrite: ${rootDir.canWrite()}\n")
+
+            val allFiles = rootDir.listFiles()
+            logBuilder.append("- allFiles count: ${allFiles.size}\n")
+            
+            if (allFiles.isEmpty()) {
+                logBuilder.append("- allFiles is EMPTY\n")
+                return@withContext 0
+            }
+
+            val audioFiles = mutableListOf<Pair<ParsedLocalSong, DocumentFile>>()
+            val lyricsMap  = mutableMapOf<String, DocumentFile>()
+
+            for (docFile in allFiles) {
+                val name = docFile.name
+                logBuilder.append("  * Found file: '$name', type: ${docFile.type}\n")
+                if (name == null) continue
+                when {
+                    name.endsWith(".m4a") || docFile.type == "audio/mp4" -> {
+                        val nameToParse = if (!name.endsWith(".m4a")) "$name.m4a" else name
+                        val parsed = parseFilename(nameToParse)
+                        if (parsed != null) {
+                            audioFiles.add(parsed to docFile)
+                            logBuilder.append("    -> Parsed success: ytId=${parsed.youtubeId}\n")
+                        } else {
+                            logBuilder.append("    -> FAIL PARSE: '$nameToParse'\n")
+                        }
+                    }
+                    name.endsWith(".lrc") -> {
+                        val ytId = LRC_ID_PATTERN.find(name)?.groupValues?.get(1) ?: continue
+                        lyricsMap[ytId] = docFile
+                        logBuilder.append("    -> Parsed LRC: ytId=$ytId\n")
+                    }
+                }
+            }
+
+            logBuilder.append("\n- Valid audio files: ${audioFiles.size}\n")
+            
+            for ((parsed, _) in audioFiles) {
+                val songId = parsed.youtubeId
+                logBuilder.append("  * Processing DB insert for $songId\n")
+
+                val lrcDoc = lyricsMap[songId]
+                var lyricsStr: String? = null
+                if (lrcDoc != null) {
+                    try {
+                        context.contentResolver.openInputStream(lrcDoc.uri)?.use { stream ->
+                            lyricsStr = stream.bufferedReader().readText()
+                            logBuilder.append("    -> Read lyrics success\n")
+                        }
             val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             context.contentResolver.takePersistableUriPermission(folderUri, flags)
-        } catch (_: Exception) { }
-
-        val rootDir = DocumentFile.fromTreeUri(context, folderUri)
-            ?: return@withContext 0
+        } catch (e: Exception) { 
+        }
 
         val allFiles = rootDir.listFiles()
-        if (allFiles.isEmpty()) return@withContext 0
+        if (allFiles.isEmpty()) {
+            return@withContext 0
+        }
 
-        // Separate .m4a and .lrc files
         val audioFiles = mutableListOf<Pair<ParsedLocalSong, DocumentFile>>()
-        val lyricsMap  = mutableMapOf<String, DocumentFile>() // youtubeId -> lrc DocumentFile
+        val lyricsMap  = mutableMapOf<String, DocumentFile>()
 
-        val resolver = context.contentResolver
         for (docFile in allFiles) {
             val name = docFile.name ?: continue
             when {
                 name.endsWith(".m4a") || docFile.type == "audio/mp4" -> {
-                    // Try parsing the name even if it misses the extension
                     val nameToParse = if (!name.endsWith(".m4a")) "$name.m4a" else name
                     val parsed = parseFilename(nameToParse)
                     if (parsed != null) {
@@ -71,59 +125,51 @@ class LibraryScanner @Inject constructor(
             }
         }
 
-        if (audioFiles.isEmpty()) return@withContext 0
-
-        var importedCount = 0
-
         for ((parsed, _) in audioFiles) {
             val songId = parsed.youtubeId
 
-            val meta = MediaMetadata(
-                id           = songId,
-                title        = parsed.title,
-                artists      = parsed.artistNames.map { MediaMetadata.Artist(id = null, name = it) },
-                duration     = -1,
-                thumbnailUrl = null
-            )
-
-            database.transaction {
-                // Returns -1L if song already in DB (IGNORE conflict strategy)
-                val rowId = insert(meta.toSongEntity().copy(inLibrary = LocalDateTime.now()))
-                if (rowId != -1L) {
-                    parsed.artistNames.forEachIndexed { idx, name ->
-                        val artist = ArtistEntity(
-                            id   = ArtistEntity.generateArtistId(),
-                            name = name
-                        )
-                        insert(artist)
-                        insert(SongArtistMap(songId = songId, artistId = artist.id, position = idx))
+            val lrcDoc = lyricsMap[songId]
+            var lyricsStr: String? = null
+            if (lrcDoc != null) {
+                try {
+                    context.contentResolver.openInputStream(lrcDoc.uri)?.use { stream ->
+                        lyricsStr = stream.bufferedReader().readText()
                     }
-                    importedCount++
-                } else {
-                    // The song was already in the database (e.g. from search history or cache).
-                    // We just need to update its inLibrary status to make it show up in the Library tab.
-                    inLibrary(songId, LocalDateTime.now())
-                    importedCount++
+                } catch (e: Exception) {
                 }
             }
 
-            // Read lyrics via ContentResolver stream (SAF URI) and upsert
-            val lrcFile = lyricsMap[songId]
-            if (lrcFile != null) {
-                try {
-                    val lyricsText = resolver.openInputStream(lrcFile.uri)?.use { stream ->
-                        stream.bufferedReader().readText()
-                    }
-                    if (!lyricsText.isNullOrBlank()) {
-                        database.query {
-                            upsert(LyricsEntity(id = songId, lyrics = lyricsText))
-                        }
-                    }
-                } catch (_: Exception) { }
+            val meta = MediaMetadata(
+                id = songId,
+                title = parsed.title,
+                artists = parsed.artistNames.map { MediaMetadata.Artist(id = null, name = it) },
+                duration = -1,
+                thumbnailUrl = null
+            )
+
+            // Execute inserts synchronously to ensure importedCount is correct before returning
+            val rowId = database.insert(meta.toSongEntity().copy(inLibrary = LocalDateTime.now()))
+            if (rowId != -1L) {
+                parsed.artistNames.forEachIndexed { idx, name ->
+                    val artist = ArtistEntity(
+                        id   = ArtistEntity.generateArtistId(),
+                        name = name
+                    )
+                    database.insert(artist)
+                    database.insert(SongArtistMap(songId = songId, artistId = artist.id, position = idx))
+                }
+                importedCount++
+            } else {
+                database.inLibrary(songId, LocalDateTime.now())
+                importedCount++
+            }
+
+            if (lyricsStr != null) {
+                database.upsert(LyricsEntity(id = songId, lyrics = lyricsStr!!))
             }
         }
 
-        importedCount
+        return@withContext importedCount
     }
 
     private fun parseFilename(filename: String): ParsedLocalSong? {
