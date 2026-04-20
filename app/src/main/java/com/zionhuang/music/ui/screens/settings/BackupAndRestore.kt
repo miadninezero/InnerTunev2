@@ -48,6 +48,14 @@ fun BackupAndRestore(
             viewModel.restore(context, uri)
         }
     }
+    
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            viewModel.scanDownloads(context)
+        } else {
+            android.widget.Toast.makeText(context, "Storage permission is required to restore library.", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(
         Modifier
@@ -75,7 +83,11 @@ fun BackupAndRestore(
             title = { Text("Restore Library from Downloads") },
             icon = { Icon(painterResource(R.drawable.sync), null) },
             onClick = {
-                viewModel.scanDownloads(context)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    permissionLauncher.launch(android.Manifest.permission.READ_MEDIA_AUDIO)
+                } else {
+                    permissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
             }
         )
     }

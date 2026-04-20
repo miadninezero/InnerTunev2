@@ -27,6 +27,7 @@ class LocalSyncUtil @Inject constructor(
     @DownloadCache private val downloadCache: SimpleCache
 ) {
     suspend fun exportDownloadToMediaStore(songId: String) = withContext(Dispatchers.IO) {
+        deleteDownloadFromMediaStore(songId) // Purge existing exports to prevent duplicates
         val song = database.song(songId).firstOrNull() ?: return@withContext
         val artistName = song.artists.joinToString(", ") { it.name }
         val title = song.song.title
@@ -120,6 +121,18 @@ class LocalSyncUtil @Inject constructor(
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    suspend fun deleteDownloadFromMediaStore(songId: String) = withContext(Dispatchers.IO) {
+        val resolver = context.contentResolver
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val selection = "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("%InnerTune%", "[$songId]%")
+            resolver.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI, selection, selectionArgs)
+        } else {
+            val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "InnerTune")
+            dir.listFiles { _, name -> name.startsWith("[$songId]") }?.forEach { it.delete() }
         }
     }
 }

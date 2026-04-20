@@ -176,6 +176,17 @@ class DownloadUtil @Inject constructor(
                         }
                     }
                 }
+
+                override fun onDownloadRemoved(downloadManager: androidx.media3.exoplayer.offline.DownloadManager, download: Download) {
+                    downloads.update { map ->
+                        map.toMutableMap().apply {
+                            remove(download.request.id)
+                        }
+                    }
+                    scope.launch {
+                        localSyncUtil.deleteDownloadFromMediaStore(download.request.id)
+                    }
+                }
             }
         )
     }
