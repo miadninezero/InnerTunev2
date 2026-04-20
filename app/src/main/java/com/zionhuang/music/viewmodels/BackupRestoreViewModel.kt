@@ -99,11 +99,15 @@ class BackupRestoreViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 Toast.makeText(context, "Scanning Downloads/InnerTune...", Toast.LENGTH_SHORT).show()
-                libraryScanner.scanDownloadsFolder()
-                Toast.makeText(context, "Library Restored!", Toast.LENGTH_SHORT).show()
+                val count = libraryScanner.scanDownloadsFolder()
+                if (count > 0) {
+                    Toast.makeText(context, "Restored $count song(s) from Downloads!", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "No new songs found in Downloads/InnerTune/", Toast.LENGTH_LONG).show()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(context, "Scan Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Scan Failed: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
