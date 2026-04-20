@@ -49,11 +49,11 @@ fun BackupAndRestore(
         }
     }
     
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) {
-            viewModel.scanDownloads(context)
-        } else {
-            android.widget.Toast.makeText(context, "Storage permission is required to restore library.", android.widget.Toast.LENGTH_SHORT).show()
+    // SAF folder picker — user explicitly grants access to the InnerTune folder.
+    // This bypasses all scoped storage restrictions and works after reinstall on all Android versions.
+    val folderPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            viewModel.scanFolder(context, uri)
         }
     }
 
@@ -80,14 +80,11 @@ fun BackupAndRestore(
             }
         )
         PreferenceEntry(
-            title = { Text("Restore Library from Downloads") },
+            title = { Text("Restore Library from Folder") },
             icon = { Icon(painterResource(R.drawable.sync), null) },
             onClick = {
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-                    permissionLauncher.launch(android.Manifest.permission.READ_MEDIA_AUDIO)
-                } else {
-                    permissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
-                }
+                // Opens the system folder picker — no extra permissions required
+                folderPickerLauncher.launch(null)
             }
         )
     }

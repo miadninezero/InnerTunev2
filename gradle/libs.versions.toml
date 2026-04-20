@@ -17,6 +17,7 @@ annotation = { module = "androidx.annotation:annotation", version.ref = "annotat
 guava = { group = "com.google.guava", name = "guava", version = "33.0.0-android" }
 coroutines-guava = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-guava", version = "1.7.3" }
 concurrent-futures = { group = "androidx.concurrent", name = "concurrent-futures-ktx", version = "1.2.0" }
+documentfile = { group = "androidx.documentfile", name = "documentfile", version = "1.0.1" }
 
 gradle = { group = "com.android.tools.build", name = "gradle", version.ref = "androidGradlePlugin" }
 activity = { group = "androidx.activity", name = "activity-compose", version = "1.9.1" }

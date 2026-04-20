@@ -95,15 +95,15 @@ class BackupRestoreViewModel @Inject constructor(
         }
     }
 
-    fun scanDownloads(context: Context) {
+    fun scanFolder(context: Context, folderUri: android.net.Uri) {
         viewModelScope.launch {
             try {
-                Toast.makeText(context, "Scanning Downloads/InnerTune...", Toast.LENGTH_SHORT).show()
-                val count = libraryScanner.scanDownloadsFolder()
+                Toast.makeText(context, "Scanning selected folder...", Toast.LENGTH_SHORT).show()
+                val count = libraryScanner.scanFolder(folderUri)
                 if (count > 0) {
-                    Toast.makeText(context, "Restored $count song(s) from Downloads!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "Restored $count song(s) from folder!", Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(context, "No new songs found in Downloads/InnerTune/", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "No new songs found. Make sure you selected the InnerTune folder.", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
