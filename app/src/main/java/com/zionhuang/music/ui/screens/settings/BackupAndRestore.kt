@@ -71,6 +71,13 @@ fun BackupAndRestore(
                 restoreLauncher.launch(arrayOf("application/octet-stream"))
             }
         )
+        PreferenceEntry(
+            title = { Text("Restore Library from Downloads") },
+            icon = { Icon(painterResource(R.drawable.sync), null) },
+            onClick = {
+                viewModel.scanDownloads(context)
+            }
+        )
     }
 
     TopAppBar(

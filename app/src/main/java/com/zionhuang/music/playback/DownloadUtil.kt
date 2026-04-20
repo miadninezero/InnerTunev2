@@ -23,6 +23,7 @@ import com.zionhuang.music.di.PlayerCache
 import com.zionhuang.music.utils.enumPreference
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -34,6 +35,9 @@ import java.util.concurrent.Executor
 import javax.inject.Inject
 import javax.inject.Singleton
 
+import com.zionhuang.music.playback.LocalSyncUtil
+import kotlinx.coroutines.CoroutineScope
+
 @Singleton
 class DownloadUtil @Inject constructor(
     @ApplicationContext context: Context,
@@ -41,7 +45,9 @@ class DownloadUtil @Inject constructor(
     val databaseProvider: DatabaseProvider,
     @DownloadCache val downloadCache: SimpleCache,
     @PlayerCache val playerCache: SimpleCache,
+    private val localSyncUtil: LocalSyncUtil
 ) {
+    private val scope = CoroutineScope(Dispatchers.IO)
     private val connectivityManager = context.getSystemService<ConnectivityManager>()!!
     private val audioQuality by enumPreference(context, AudioQualityKey, AudioQuality.AUTO)
     private val songUrlCache = HashMap<String, Pair<String, Long>>()
@@ -49,10 +55,13 @@ class DownloadUtil @Inject constructor(
         CacheDataSource.Factory()
             .setCache(playerCache)
             .setUpstreamDataSourceFactory(
-                OkHttpDataSource.Factory(
-                    OkHttpClient.Builder()
-                        .proxy(YouTube.proxy)
-                        .build()
+                androidx.media3.datasource.DefaultDataSource.Factory(
+                    context,
+                    OkHttpDataSource.Factory(
+                        OkHttpClient.Builder()
+                            .proxy(YouTube.proxy)
+                            .build()
+                    )
                 )
             )
     ) { dataSpec ->
@@ -61,6 +70,26 @@ class DownloadUtil @Inject constructor(
 
         if (playerCache.isCached(mediaId, dataSpec.position, length)) {
             return@Factory dataSpec
+        }
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val resolver = context.contentResolver
+            val projection = arrayOf(android.provider.MediaStore.MediaColumns._ID)
+            val selection = "${android.provider.MediaStore.MediaColumns.RELATIVE_PATH} LIKE ? AND ${android.provider.MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("%InnerTune%", "[$mediaId]%")
+            resolver.query(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, projection, selection, selectionArgs, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val id = cursor.getLong(0)
+                    val uri = android.content.ContentUris.withAppendedId(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, id)
+                    return@Factory dataSpec.withUri(uri)
+                }
+            }
+        } else {
+             val dir = java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "InnerTune")
+             val files = dir.listFiles { _, name -> name.startsWith("[$mediaId]") && name.endsWith(".m4a") }
+             if (files?.isNotEmpty() == true) {
+                 return@Factory dataSpec.withUri(files[0].toUri())
+             }
         }
 
         songUrlCache[mediaId]?.takeIf { it.second < System.currentTimeMillis() }?.let {
@@ -139,6 +168,11 @@ class DownloadUtil @Inject constructor(
                     downloads.update { map ->
                         map.toMutableMap().apply {
                             set(download.request.id, download)
+                        }
+                    }
+                    if (download.state == Download.STATE_COMPLETED) {
+                        scope.launch {
+                            localSyncUtil.exportDownloadToMediaStore(download.request.id)
                         }
                     }
                 }

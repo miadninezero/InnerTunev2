@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.zionhuang.music.MainActivity
 import com.zionhuang.music.R
 import com.zionhuang.music.db.InternalDatabase
@@ -13,11 +14,13 @@ import com.zionhuang.music.extensions.div
 import com.zionhuang.music.extensions.tryOrNull
 import com.zionhuang.music.extensions.zipInputStream
 import com.zionhuang.music.extensions.zipOutputStream
+import com.zionhuang.music.playback.LibraryScanner
 import com.zionhuang.music.playback.MusicService
 import com.zionhuang.music.playback.MusicService.Companion.PERSISTENT_QUEUE_FILE
 import com.zionhuang.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -28,6 +31,7 @@ import kotlin.system.exitProcess
 @HiltViewModel
 class BackupRestoreViewModel @Inject constructor(
     val database: MusicDatabase,
+    private val libraryScanner: LibraryScanner,
 ) : ViewModel() {
     fun backup(context: Context, uri: Uri) {
         runCatching {
@@ -88,6 +92,19 @@ class BackupRestoreViewModel @Inject constructor(
         }.onFailure {
             reportException(it)
             Toast.makeText(context, R.string.restore_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun scanDownloads(context: Context) {
+        viewModelScope.launch {
+            try {
+                Toast.makeText(context, "Scanning Downloads/InnerTune...", Toast.LENGTH_SHORT).show()
+                libraryScanner.scanDownloadsFolder()
+                Toast.makeText(context, "Library Restored!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Toast.makeText(context, "Scan Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
