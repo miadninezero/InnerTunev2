@@ -588,6 +588,17 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onPlayerError(error: PlaybackException) {
+        // On remote or no-stream errors, the cached format URL is likely expired/invalid.
+        // Delete it so the next play attempt fetches a fresh one instead of reusing a dead URL.
+        if (error.errorCode == PlaybackException.ERROR_CODE_REMOTE_ERROR ||
+            error.errorCode == ERROR_CODE_NO_STREAM
+        ) {
+            scope.launch(Dispatchers.IO) {
+                currentMediaMetadata.value?.id?.let { mediaId ->
+                    database.query { deleteFormat(mediaId) }
+                }
+            }
+        }
         if (dataStore.get(AutoSkipNextOnErrorKey, false) &&
             isInternetAvailable(this) &&
             player.hasNextMediaItem()
@@ -641,6 +652,7 @@ class MusicService : MediaLibraryService(),
             val playerResponse = runBlocking(Dispatchers.IO) {
                 YouTube.player(mediaId)
             }.getOrElse { throwable ->
+                android.util.Log.e("MusicService", "player() failed for $mediaId", throwable)
                 when (throwable) {
                     is ConnectException, is UnknownHostException -> {
                         throw PlaybackException(getString(R.string.error_no_internet), throwable, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)

@@ -821,6 +821,10 @@ interface DatabaseDao {
     @Upsert
     fun upsert(format: FormatEntity)
 
+    @Query("DELETE FROM format WHERE id = :id")
+    fun deleteFormat(id: String)
+
+
     @Delete
     fun delete(song: SongEntity)
 

@@ -32,7 +32,8 @@ class InnerTube {
         gl = Locale.getDefault().country,
         hl = Locale.getDefault().toLanguageTag()
     )
-    var visitorData: String = "CgtsZG1ySnZiQWtSbyiMjuGSBg%3D%3D"
+    // visitorData is nullable — it starts null and gets set from DataStore / sw.js_data
+    var visitorData: String? = null
     var cookie: String? = null
         set(value) {
             field = value
@@ -67,14 +68,30 @@ class InnerTube {
             deflate(0.8F)
         }
 
-        if (proxy != null) {
-            engine {
+        // Timeout config matching Estrella-Music — prevents search hanging forever
+        install(HttpTimeout) {
+            requestTimeoutMillis = 30_000   // 30s total request timeout
+            connectTimeoutMillis = 15_000   // 15s connect timeout
+            socketTimeoutMillis = 30_000    // 30s socket read timeout
+        }
+
+        engine {
+            config {
+                connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                retryOnConnectionFailure(true)
+            }
+            if (proxy != null) {
                 proxy = this@InnerTube.proxy
             }
         }
 
         defaultRequest {
             url("https://music.youtube.com/youtubei/v1/")
+            header("Accept", "application/json")
+            header("Accept-Language", "en-US,en;q=0.9")
+            header("Cache-Control", "no-cache")
         }
     }
 
@@ -82,24 +99,29 @@ class InnerTube {
         contentType(ContentType.Application.Json)
         headers {
             append("X-Goog-Api-Format-Version", "1")
-            append("X-YouTube-Client-Name", client.clientName)
+            // X-YouTube-Client-Name MUST be the numeric clientId (not the string name)
+            // e.g. "67" for WEB_REMIX, "5" for IOS, "28" for ANDROID_VR
+            append("X-YouTube-Client-Name", client.clientId)
             append("X-YouTube-Client-Version", client.clientVersion)
-            append("x-origin", "https://music.youtube.com")
-            if (client.referer != null) {
-                append("Referer", client.referer)
-            }
-            if (setLogin) {
+            append("X-Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
+            append("Referer", YouTubeClient.ORIGIN_YOUTUBE_MUSIC + "/")
+            visitorData?.let { append("X-Goog-Visitor-Id", it) }
+            // CRITICAL: Only send auth headers for clients with loginSupported=true.
+            // Sending Authorization to IOS/ANDROID_VR/embedded clients causes YouTube
+            // to return "YouTube is no longer supported in this device" errors.
+            if (setLogin && client.loginSupported) {
                 cookie?.let { cookie ->
                     append("cookie", cookie)
                     if ("SAPISID" !in cookieMap) return@let
                     val currentTime = System.currentTimeMillis() / 1000
-                    val sapisidHash = sha1("$currentTime ${cookieMap["SAPISID"]} https://music.youtube.com")
+                    val sapisidHash = sha1("$currentTime ${cookieMap["SAPISID"]} ${YouTubeClient.ORIGIN_YOUTUBE_MUSIC}")
                     append("Authorization", "SAPISIDHASH ${currentTime}_${sapisidHash}")
                 }
             }
         }
         userAgent(client.userAgent)
-        parameter("key", client.api_key)
+        // DO NOT send ?key= parameter — YouTube rejects legacy AIzaSy... API keys.
+        // Estrella-Music (working fork) sends NO api_key for any endpoint.
         parameter("prettyPrint", false)
     }
 
@@ -126,11 +148,31 @@ class InnerTube {
         videoId: String,
         playlistId: String?,
     ) = httpClient.post("player") {
-        ytClient(client, setLogin = true)
+        contentType(ContentType.Application.Json)
+        headers {
+            append("X-Goog-Api-Format-Version", "1")
+            append("X-YouTube-Client-Name", client.clientId)
+            append("X-YouTube-Client-Version", client.clientVersion)
+            append("X-Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
+            append("Referer", YouTubeClient.ORIGIN_YOUTUBE_MUSIC + "/")
+            visitorData?.let { append("X-Goog-Visitor-Id", it) }
+            // Only send auth for supported clients — IOS/ANDROID_VR break with auth
+            if (client.loginSupported) {
+                cookie?.let { cookie ->
+                    append("cookie", cookie)
+                    if ("SAPISID" !in cookieMap) return@let
+                    val currentTime = System.currentTimeMillis() / 1000
+                    val sapisidHash = sha1("$currentTime ${cookieMap["SAPISID"]} ${YouTubeClient.ORIGIN_YOUTUBE_MUSIC}")
+                    append("Authorization", "SAPISIDHASH ${currentTime}_${sapisidHash}")
+                }
+            }
+        }
+        userAgent(client.userAgent)
+        parameter("prettyPrint", false)
         setBody(
             PlayerBody(
                 context = client.toContext(locale, visitorData).let {
-                    if (client == YouTubeClient.TVHTML5) {
+                    if (client.clientName == "TVHTML5_SIMPLY_EMBEDDED_PLAYER") {
                         it.copy(
                             thirdParty = Context.ThirdParty(
                                 embedUrl = "https://www.youtube.com/watch?v=${videoId}"
@@ -143,11 +185,6 @@ class InnerTube {
             )
         )
     }
-
-    suspend fun pipedStreams(videoId: String) =
-        httpClient.get("https://pipedapi.kavin.rocks/streams/${videoId}") {
-            contentType(ContentType.Application.Json)
-        }
 
     suspend fun browse(
         client: YouTubeClient,
@@ -226,7 +263,6 @@ class InnerTube {
         client: YouTubeClient,
         videoId: String,
     ) = httpClient.post("https://music.youtube.com/youtubei/v1/get_transcript") {
-        parameter("key", "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3")
         headers {
             append("Content-Type", "application/json")
         }

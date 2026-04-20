@@ -13,8 +13,10 @@ import com.zionhuang.innertube.models.SongItem
 import com.zionhuang.innertube.models.WatchEndpoint
 import com.zionhuang.innertube.models.WatchEndpoint.WatchEndpointMusicSupportedConfigs.WatchEndpointMusicConfig.Companion.MUSIC_VIDEO_TYPE_ATV
 import com.zionhuang.innertube.models.YouTubeClient.Companion.ANDROID_MUSIC
+import com.zionhuang.innertube.models.YouTubeClient.Companion.ANDROID_VR_NO_AUTH
 import com.zionhuang.innertube.models.YouTubeClient.Companion.IOS
 import com.zionhuang.innertube.models.YouTubeClient.Companion.TVHTML5
+import com.zionhuang.innertube.models.YouTubeClient.Companion.TVHTML5_SIMPLY_EMBEDDED_PLAYER
 import com.zionhuang.innertube.models.YouTubeClient.Companion.WEB
 import com.zionhuang.innertube.models.YouTubeClient.Companion.WEB_REMIX
 import com.zionhuang.innertube.models.YouTubeLocale
@@ -48,6 +50,7 @@ import com.zionhuang.innertube.pages.SearchResult
 import com.zionhuang.innertube.pages.SearchSuggestionPage
 import com.zionhuang.innertube.pages.SearchSummary
 import com.zionhuang.innertube.pages.SearchSummaryPage
+import java.util.logging.Logger
 import io.ktor.client.call.body
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json
@@ -68,7 +71,7 @@ object YouTube {
         set(value) {
             innerTube.locale = value
         }
-    var visitorData: String
+    var visitorData: String?
         get() = innerTube.visitorData
         set(value) {
             innerTube.visitorData = value
@@ -104,33 +107,22 @@ object YouTube {
     }
 
     suspend fun searchSummary(query: String): Result<SearchSummaryPage> = runCatching {
-        val response = innerTube.search(WEB_REMIX, query).body<SearchResponse>()
+        // The "All" tab summary API call is unreliable with current YouTube response structure.
+        // Instead, use the Songs filter search (which works reliably) and display those results.
+        val response = innerTube.search(WEB_REMIX, query, SearchFilter.FILTER_SONG.value).body<SearchResponse>()
+
+        val songs = response.contents?.tabbedSearchResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.contents?.lastOrNull()
+            ?.musicShelfRenderer?.contents?.mapNotNull {
+                SearchPage.toYTItem(it.musicResponsiveListItemRenderer)
+            }.orEmpty()
+
         SearchSummaryPage(
-            summaries = response.contents?.tabbedSearchResultsRenderer?.tabs?.firstOrNull()?.tabRenderer?.content?.sectionListRenderer?.contents?.mapNotNull { it ->
-                if (it.musicCardShelfRenderer != null)
-                    SearchSummary(
-                        title = it.musicCardShelfRenderer.header.musicCardShelfHeaderBasicRenderer.title.runs?.firstOrNull()?.text ?: return@mapNotNull null,
-                        items = listOfNotNull(SearchSummaryPage.fromMusicCardShelfRenderer(it.musicCardShelfRenderer))
-                            .plus(
-                                it.musicCardShelfRenderer.contents
-                                    ?.mapNotNull { it.musicResponsiveListItemRenderer }
-                                    ?.mapNotNull(SearchSummaryPage.Companion::fromMusicResponsiveListItemRenderer)
-                                    .orEmpty()
-                            )
-                            .distinctBy { it.id }
-                            .ifEmpty { null } ?: return@mapNotNull null
-                    )
-                else
-                    SearchSummary(
-                        title = it.musicShelfRenderer?.title?.runs?.firstOrNull()?.text ?: return@mapNotNull null,
-                        items = it.musicShelfRenderer.contents
-                            ?.mapNotNull {
-                                SearchSummaryPage.fromMusicResponsiveListItemRenderer(it.musicResponsiveListItemRenderer)
-                            }
-                            ?.distinctBy { it.id }
-                            ?.ifEmpty { null } ?: return@mapNotNull null
-                    )
-            }!!
+            summaries = if (songs.isNotEmpty()) {
+                listOf(SearchSummary(title = "Songs", items = songs))
+            } else {
+                emptyList()
+            }
         )
     }
 
@@ -429,34 +421,59 @@ object YouTube {
             }
     }
 
+    /**
+     * Fetch player response for a video, trying multiple clients in sequence.
+     * Strategy mirrors Estrella-Music (josprox/Estrella-Music):
+     *   1. WEB_REMIX  — metadata + stream (logged-in preferred)
+     *   2. ANDROID_VR_NO_AUTH — Oculus Quest client, no auth required (PRIMARY fallback)
+     *   3. IOS v21.03.1 — iOS client
+     *   4. TVHTML5_SIMPLY_EMBEDDED_PLAYER — embedded, bypasses age restrictions
+     *   5. TVHTML5 — full TV client, last resort
+     */
     suspend fun player(videoId: String, playlistId: String? = null): Result<PlayerResponse> = runCatching {
-        var playerResponse: PlayerResponse
-        if (this.cookie != null) { // if logged in: try ANDROID_MUSIC client first because IOS client does not play age restricted songs
-            playerResponse = innerTube.player(ANDROID_MUSIC, videoId, playlistId).body<PlayerResponse>()
-            if (playerResponse.playabilityStatus.status == "OK") {
-                return@runCatching playerResponse
+        val log = Logger.getLogger("YTPlayer")
+
+        val fallbackClients = listOf(
+            WEB_REMIX,
+            ANDROID_VR_NO_AUTH,
+            IOS,
+            TVHTML5_SIMPLY_EMBEDDED_PLAYER,
+            TVHTML5
+        )
+
+        var lastResponse: PlayerResponse? = null
+
+        for (client in fallbackClients) {
+            log.info("[$videoId] Trying client=${client.clientName} v${client.clientVersion}")
+            try {
+                val response = innerTube.player(client, videoId, playlistId).body<PlayerResponse>()
+                val status = response.playabilityStatus.status
+                val reason = response.playabilityStatus.reason
+                log.info("[$videoId] ${client.clientName} → status=$status reason=$reason")
+
+                if (status == "OK") {
+                    // Verify there are actual stream URLs available
+                    val hasStreams = response.streamingData?.adaptiveFormats?.any { it.url != null } == true
+                            || response.streamingData?.formats?.any { it.url != null } == true
+                    if (hasStreams) {
+                        log.info("[$videoId] ${client.clientName} has valid streams — using this response")
+                        return@runCatching response
+                    } else {
+                        log.warning("[$videoId] ${client.clientName} status=OK but NO stream URLs (may need signature decoding) — trying next client")
+                        lastResponse = response
+                    }
+                } else {
+                    log.warning("[$videoId] ${client.clientName} status=$status reason=$reason — trying next")
+                    lastResponse = response
+                }
+            } catch (e: Exception) {
+                log.warning("[$videoId] ${client.clientName} threw ${e.javaClass.simpleName}: ${e.message}")
             }
         }
-        playerResponse = innerTube.player(IOS, videoId, playlistId).body<PlayerResponse>()
-        if (playerResponse.playabilityStatus.status == "OK") {
-            return@runCatching playerResponse
-        }
-        val safePlayerResponse = innerTube.player(TVHTML5, videoId, playlistId).body<PlayerResponse>()
-        if (safePlayerResponse.playabilityStatus.status != "OK") {
-            return@runCatching playerResponse
-        }
-        val audioStreams = innerTube.pipedStreams(videoId).body<PipedResponse>().audioStreams
-        safePlayerResponse.copy(
-            streamingData = safePlayerResponse.streamingData?.copy(
-                adaptiveFormats = safePlayerResponse.streamingData.adaptiveFormats.mapNotNull { adaptiveFormat ->
-                    audioStreams.find { it.bitrate == adaptiveFormat.bitrate }?.let {
-                        adaptiveFormat.copy(
-                            url = it.url
-                        )
-                    }
-                }
-            )
-        )
+
+        // All clients failed or returned no streams — return last response for error reporting
+        log.severe("[$videoId] All clients exhausted. Returning last known response.")
+        lastResponse ?: throw Exception("All YouTube clients failed for videoId=$videoId")
     }
 
     suspend fun next(endpoint: WatchEndpoint, continuation: String? = null): Result<NextResult> = runCatching {
