@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
@@ -67,6 +68,7 @@ import com.zionhuang.music.constants.InnerTubeCookieKey
 import com.zionhuang.music.constants.ListItemHeight
 import com.zionhuang.music.constants.ListThumbnailSize
 import com.zionhuang.music.constants.ThumbnailCornerRadius
+import com.zionhuang.music.data.local.SongPlaySummary
 import com.zionhuang.music.db.entities.Album
 import com.zionhuang.music.db.entities.Artist
 import com.zionhuang.music.db.entities.LocalItem
@@ -85,6 +87,7 @@ import com.zionhuang.music.ui.component.NavigationTile
 import com.zionhuang.music.ui.component.NavigationTitle
 import com.zionhuang.music.ui.component.SongGridItem
 import com.zionhuang.music.ui.component.SongListItem
+import com.zionhuang.music.ui.component.MostPlayedSongCard
 import com.zionhuang.music.ui.component.YouTubeGridItem
 import com.zionhuang.music.ui.component.shimmer.GridItemPlaceHolder
 import com.zionhuang.music.ui.component.shimmer.ShimmerHost
@@ -97,7 +100,10 @@ import com.zionhuang.music.ui.menu.YouTubeArtistMenu
 import com.zionhuang.music.ui.menu.YouTubePlaylistMenu
 import com.zionhuang.music.ui.menu.YouTubeSongMenu
 import com.zionhuang.music.ui.utils.SnapLayoutInfoProvider
+import com.zionhuang.music.data.recommendation.HybridFeed
+import com.zionhuang.music.data.recommendation.RecommendationUiState
 import com.zionhuang.music.utils.rememberPreference
+import com.zionhuang.music.viewmodels.ExploreViewModel
 import com.zionhuang.music.viewmodels.HomeViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -105,11 +111,147 @@ import kotlinx.coroutines.launch
 import kotlin.math.min
 import kotlin.random.Random
 
+
+/**
+ * Emits the four hybrid recommendation rows into a [LazyListScope].
+ * Called from within the [LazyColumn] in [HomeScreen].
+ *
+ * Sections rendered (in order):
+ *  1. "For You" — personalised songs + new-release albums
+ *  2. "Because you liked X" — [HybridFeed.moreLikeThis] (if available)
+ *  3. "Hot in Your Area" — regional top chart
+ *  4. "Global Top 50" — global top chart
+ *
+ * @param feed         The [HybridFeed] to render.
+ * @param ytGridItem   The shared composable lambda that wraps [YouTubeGridItem] with all
+ *                     the play/menu/navigation callbacks already closed over.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private fun LazyListScope.hybridFeedItems(
+    feed: HybridFeed,
+    @Suppress("UNUSED_PARAMETER") mediaMetadata: com.zionhuang.music.models.MediaMetadata?,
+    @Suppress("UNUSED_PARAMETER") isPlaying: Boolean,
+    @Suppress("UNUSED_PARAMETER") scope: kotlinx.coroutines.CoroutineScope,
+    @Suppress("UNUSED_PARAMETER") playerConnection: com.zionhuang.music.playback.PlayerConnection,
+    @Suppress("UNUSED_PARAMETER") navController: androidx.navigation.NavController,
+    @Suppress("UNUSED_PARAMETER") menuState: com.zionhuang.music.ui.component.MenuState,
+    @Suppress("UNUSED_PARAMETER") haptic: androidx.compose.ui.hapticfeedback.HapticFeedback,
+    ytGridItem: @Composable (com.zionhuang.innertube.models.YTItem) -> Unit,
+) {
+    // ── "For You" (personal) ─────────────────────────────────────────────────
+    if (feed.forYou.isNotEmpty() || feed.forYouAlbums.isNotEmpty()) {
+        item(key = "section_for_you_title") {
+            NavigationTitle(
+                title = stringResource(R.string.section_for_you),
+                modifier = Modifier.animateItem()
+            )
+        }
+        item(key = "section_for_you_row") {
+            LazyRow(
+                contentPadding = WindowInsets.systemBars
+                    .only(WindowInsetsSides.Horizontal)
+                    .asPaddingValues(),
+                modifier = Modifier.animateItem()
+            ) {
+                items(
+                    items = feed.forYou,
+                    key = { "foryou_song_${it.id}" }
+                ) { song ->
+                    ytGridItem(song)
+                }
+                items(
+                    items = feed.forYouAlbums,
+                    key = { "foryou_album_${it.id}" }
+                ) { album ->
+                    ytGridItem(album)
+                }
+            }
+        }
+    }
+
+    // ── "Because you liked X" (More Like This) ───────────────────────────────
+    val moreLikeThis = feed.moreLikeThis
+    if (moreLikeThis != null && moreLikeThis.songs.isNotEmpty()) {
+        item(key = "section_similar_title") {
+            NavigationTitle(
+                title = moreLikeThis.sectionLabel,
+                modifier = Modifier.animateItem()
+            )
+        }
+        item(key = "section_similar_row") {
+            LazyRow(
+                contentPadding = WindowInsets.systemBars
+                    .only(WindowInsetsSides.Horizontal)
+                    .asPaddingValues(),
+                modifier = Modifier.animateItem()
+            ) {
+                items(
+                    items = moreLikeThis.songs,
+                    key = { "similar_${it.id}" }
+                ) { song ->
+                    ytGridItem(song)
+                }
+            }
+        }
+    }
+
+    // ── "Hot in Your Area" (regional) ────────────────────────────────────────
+    if (feed.hotInYourArea.isNotEmpty()) {
+        item(key = "section_regional_title") {
+            NavigationTitle(
+                title = stringResource(R.string.section_hot_in_area),
+                modifier = Modifier.animateItem()
+            )
+        }
+        item(key = "section_regional_row") {
+            LazyRow(
+                contentPadding = WindowInsets.systemBars
+                    .only(WindowInsetsSides.Horizontal)
+                    .asPaddingValues(),
+                modifier = Modifier.animateItem()
+            ) {
+                items(
+                    items = feed.hotInYourArea,
+                    key = { "regional_${it.id}" }
+                ) { song ->
+                    ytGridItem(song)
+                }
+            }
+        }
+    }
+
+    // ── "Global Top 50" ───────────────────────────────────────────────────────
+    if (feed.globalTop50.isNotEmpty()) {
+        item(key = "section_global_title") {
+            NavigationTitle(
+                title = stringResource(R.string.section_global_top_50),
+                modifier = Modifier.animateItem()
+            )
+        }
+        item(key = "section_global_row") {
+            LazyRow(
+                contentPadding = WindowInsets.systemBars
+                    .only(WindowInsetsSides.Horizontal)
+                    .asPaddingValues(),
+                modifier = Modifier.animateItem()
+            ) {
+                items(
+                    items = feed.globalTop50,
+                    key = { "global_${it.id}" }
+                ) { song ->
+                    ytGridItem(song)
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     navController: NavController,
     viewModel: HomeViewModel = hiltViewModel(),
+    exploreViewModel: ExploreViewModel = hiltViewModel(),
 ) {
     val menuState = LocalMenuState.current
     val database = LocalDatabase.current
@@ -129,6 +271,13 @@ fun HomeScreen(
 
     val allLocalItems by viewModel.allLocalItems.collectAsState()
     val allYtItems by viewModel.allYtItems.collectAsState()
+
+    // ── Most Played (from local interaction log) ──────────────────────────
+    val mostPlayedSongs by viewModel.mostPlayedSongs.collectAsState()
+
+    // ── Hybrid recommendation feed ───────────────────────────────────────
+    val exploreUiState by exploreViewModel.uiState.collectAsState()
+    val exploreRefreshing by exploreViewModel.isRefreshing.collectAsState()
 
     val isLoading by viewModel.isLoading.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -424,6 +573,107 @@ fun HomeScreen(
                 }
             }
 
+            // ── Most Played section ────────────────────────────────────────────────
+            // mostPlayedSongs == null  →  still loading (show nothing)
+            // mostPlayedSongs == []   →  new user (show placeholder)
+            // mostPlayedSongs != []   →  show the horizontal row
+            if (mostPlayedSongs != null) {
+                item {
+                    NavigationTitle(
+                        title = stringResource(R.string.most_played),
+                        modifier = Modifier.animateItem()
+                    )
+                }
+
+                if (mostPlayedSongs!!.isEmpty()) {
+                    // New user: no play interactions logged yet
+                    item {
+                        androidx.compose.foundation.layout.Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
+                                .animateItem()
+                        ) {
+                            androidx.compose.material3.Text(
+                                text = stringResource(R.string.most_played_empty),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
+                    }
+                } else {
+                    item {
+                        LazyRow(
+                            contentPadding = WindowInsets.systemBars
+                                .only(WindowInsetsSides.Horizontal)
+                                .asPaddingValues(),
+                            modifier = Modifier.animateItem()
+                        ) {
+                            items(
+                                items = mostPlayedSongs!!,
+                                key = { it.songId }
+                            ) { summary ->
+                                // Look up the full Song from MusicDatabase so badges
+                                // (liked, library, download) stay live and accurate.
+                                val song by database.song(summary.songId)
+                                    .collectAsState(initial = null)
+
+                                MostPlayedSongCard(
+                                    summary = summary,
+                                    song = song,
+                                    isActive = (song?.id ?: summary.songId) == mediaMetadata?.id,
+                                    isPlaying = isPlaying,
+                                    onClick = {
+                                        val fullSong = song
+                                        if (fullSong != null) {
+                                            if (fullSong.id == mediaMetadata?.id) {
+                                                playerConnection.player.togglePlayPause()
+                                            } else {
+                                                playerConnection.playQueue(
+                                                    YouTubeQueue.radio(fullSong.toMediaMetadata())
+                                                )
+                                            }
+                                        } else {
+                                            // Song not in the local library yet —
+                                            // build a minimal MediaMetadata and start a radio.
+                                            playerConnection.playQueue(
+                                                YouTubeQueue.radio(
+                                                    com.zionhuang.music.models.MediaMetadata(
+                                                        id = summary.songId,
+                                                        title = summary.title,
+                                                        artists = listOf(
+                                                            com.zionhuang.music.models.MediaMetadata.Artist(
+                                                                id = null,
+                                                                name = summary.artist,
+                                                            )
+                                                        ),
+                                                        duration = -1,
+                                                    )
+                                                )
+                                            )
+                                        }
+                                    },
+                                    onLongClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        song?.let { s ->
+                                            menuState.show {
+                                                SongMenu(
+                                                    originalSong = s,
+                                                    navController = navController,
+                                                    onDismiss = menuState::dismiss
+                                                )
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             forgottenFavorites?.takeIf { it.isNotEmpty() }?.let { forgottenFavorites ->
                 item {
                     NavigationTitle(
@@ -584,141 +834,82 @@ fun HomeScreen(
                 }
             }
 
-            homePage?.sections?.forEach {
-                item {
-                    NavigationTitle(
-                        title = it.title,
-                        label = it.label,
-                        thumbnail = it.thumbnail?.let { thumbnailUrl ->
-                            {
-                                val shape = if (it.endpoint?.isArtistEndpoint == true) CircleShape else RoundedCornerShape(ThumbnailCornerRadius)
-                                AsyncImage(
-                                    model = thumbnailUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(ListThumbnailSize)
-                                        .clip(shape)
+            // ── Hybrid recommendation sections ───────────────────────────────
+            // exploreUiState drives the three rows: For You, Hot in Your Area,
+            // and Global Top 50.  While loading we show shimmers; on error we
+            // show a subtle banner but still display any partial data.
+            when (val state = exploreUiState) {
+                is RecommendationUiState.Loading -> {
+                    // Three shimmer rows while all network calls are in flight
+                    repeat(3) {
+                        item {
+                            ShimmerHost(modifier = Modifier.animateItem()) {
+                                TextPlaceholder(
+                                    height = 36.dp,
+                                    modifier = Modifier.padding(12.dp).width(220.dp),
                                 )
+                                LazyRow {
+                                    items(5) { GridItemPlaceHolder() }
+                                }
                             }
-                        },
-                        modifier = Modifier.animateItem()
-                    )
-                }
-
-                item {
-                    LazyRow(
-                        contentPadding = WindowInsets.systemBars
-                            .only(WindowInsetsSides.Horizontal)
-                            .asPaddingValues(),
-                        modifier = Modifier.animateItem()
-                    ) {
-                        items(it.items) { item ->
-                            ytGridItem(item)
                         }
                     }
                 }
-            }
 
-            explorePage?.newReleaseAlbums?.let { newReleaseAlbums ->
-                item {
-                    NavigationTitle(
-                        title = stringResource(R.string.new_release_albums),
-                        onClick = {
-                            navController.navigate("new_release")
-                        },
-                        modifier = Modifier.animateItem()
-                    )
-                }
-
-                item {
-                    LazyRow(
-                        contentPadding = WindowInsets.systemBars
-                            .only(WindowInsetsSides.Horizontal)
-                            .asPaddingValues(),
-                        modifier = Modifier.animateItem()
-                    ) {
-                        items(
-                            items = newReleaseAlbums,
-                            key = { it.id }
-                        ) { album ->
-                            YouTubeGridItem(
-                                item = album,
-                                isActive = mediaMetadata?.album?.id == album.id,
-                                isPlaying = isPlaying,
-                                coroutineScope = scope,
-                                modifier = Modifier
-                                    .combinedClickable(
-                                        onClick = {
-                                            navController.navigate("album/${album.id}")
-                                        },
-                                        onLongClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            menuState.show {
-                                                YouTubeAlbumMenu(
-                                                    albumItem = album,
-                                                    navController = navController,
-                                                    onDismiss = menuState::dismiss
-                                                )
-                                            }
-                                        }
-                                    )
-                                    .animateItem()
+                is RecommendationUiState.Error -> {
+                    // Show error banner; still render partialFeed below if available
+                    item {
+                        androidx.compose.foundation.layout.Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .animateItem()
+                        ) {
+                            androidx.compose.material3.Text(
+                                text = stringResource(R.string.recommendation_error),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
                             )
                         }
                     }
-                }
-            }
-
-            explorePage?.moodAndGenres?.let { moodAndGenres ->
-                item {
-                    NavigationTitle(
-                        title = stringResource(R.string.mood_and_genres),
-                        onClick = {
-                            navController.navigate("mood_and_genres")
-                        },
-                        modifier = Modifier.animateItem()
-                    )
-                }
-
-                item {
-                    LazyHorizontalGrid(
-                        rows = GridCells.Fixed(4),
-                        contentPadding = PaddingValues(6.dp),
-                        modifier = Modifier
-                            .height((MoodAndGenresButtonHeight + 12.dp) * 4 + 12.dp)
-                            .animateItem()
-                    ) {
-                        items(moodAndGenres) {
-                            MoodAndGenresButton(
-                                title = it.title,
-                                onClick = {
-                                    navController.navigate("youtube_browse/${it.endpoint.browseId}?params=${it.endpoint.params}")
-                                },
-                                modifier = Modifier
-                                    .padding(6.dp)
-                                    .width(180.dp)
-                            )
-                        }
+                    state.partialFeed?.let { feed ->
+                        hybridFeedItems(
+                            feed            = feed,
+                            mediaMetadata   = mediaMetadata,
+                            isPlaying       = isPlaying,
+                            scope           = scope,
+                            playerConnection = playerConnection,
+                            navController   = navController,
+                            menuState       = menuState,
+                            haptic          = haptic,
+                            ytGridItem      = ytGridItem,
+                        )
                     }
+                }
+
+                is RecommendationUiState.Success -> {
+                    hybridFeedItems(
+                        feed            = state.feed,
+                        mediaMetadata   = mediaMetadata,
+                        isPlaying       = isPlaying,
+                        scope           = scope,
+                        playerConnection = playerConnection,
+                        navController   = navController,
+                        menuState       = menuState,
+                        haptic          = haptic,
+                        ytGridItem      = ytGridItem,
+                    )
                 }
             }
 
             if (isLoading) {
                 item {
-                    ShimmerHost(
-                        modifier = Modifier.animateItem()
-                    ) {
+                    ShimmerHost(modifier = Modifier.animateItem()) {
                         TextPlaceholder(
                             height = 36.dp,
-                            modifier = Modifier
-                                .padding(12.dp)
-                                .width(250.dp),
+                            modifier = Modifier.padding(12.dp).width(250.dp),
                         )
-                        LazyRow {
-                            items(4) {
-                                GridItemPlaceHolder()
-                            }
-                        }
+                        LazyRow { items(4) { GridItemPlaceHolder() } }
                     }
                 }
             }

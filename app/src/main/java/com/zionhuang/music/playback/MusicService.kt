@@ -74,6 +74,7 @@ import com.zionhuang.music.constants.PlayerVolumeKey
 import com.zionhuang.music.constants.RepeatModeKey
 import com.zionhuang.music.constants.ShowLyricsKey
 import com.zionhuang.music.constants.SkipSilenceKey
+import com.zionhuang.music.data.local.InteractionRepository
 import com.zionhuang.music.db.MusicDatabase
 import com.zionhuang.music.db.entities.Event
 import com.zionhuang.music.db.entities.FormatEntity
@@ -146,6 +147,9 @@ class MusicService : MediaLibraryService(),
     PlaybackStatsListener.Callback {
     @Inject
     lateinit var database: MusicDatabase
+
+    @Inject
+    lateinit var interactionRepository: InteractionRepository
 
     @Inject
     lateinit var lyricsHelper: LyricsHelper
@@ -528,6 +532,25 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        // ── Skip detection ────────────────────────────────────────────────────
+        // MEDIA_ITEM_TRANSITION_REASON_SEEK is fired when the user explicitly
+        // taps "next" (seekToNext). We log it as a SKIP in the interaction DB.
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK) {
+            // The transition has already moved to the next item; the *previous*
+            // song metadata is still held in currentMediaMetadata before the
+            // next onEvents() call updates it. Capture it now.
+            val skippedMeta = currentMediaMetadata.value
+            if (skippedMeta != null) {
+                scope.launch(Dispatchers.IO) {
+                    interactionRepository.logSkip(
+                        songId  = skippedMeta.id,
+                        title   = skippedMeta.title,
+                        artist  = skippedMeta.artists.joinToString { it.name },
+                    )
+                }
+            }
+        }
+
         // Auto load more songs
         if (dataStore.get(AutoLoadMoreKey, true) &&
             reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT &&
@@ -737,6 +760,27 @@ class MusicService : MediaLibraryService(),
 
     override fun onPlaybackStatsReady(eventTime: AnalyticsListener.EventTime, playbackStats: PlaybackStats) {
         val mediaItem = eventTime.timeline.getWindow(eventTime.windowIndex, Timeline.Window()).mediaItem
+
+        // ── Interaction log: record a PLAY if song played ≥ 10 seconds ───────
+        if (playbackStats.totalPlayTimeMs >= 10_000L) {
+            val meta = currentMediaMetadata.value
+            // Use meta when available (richer artist info); fall back to mediaItem id only.
+            val songId = meta?.id ?: mediaItem.mediaId
+            val title  = meta?.title ?: mediaItem.mediaMetadata.title?.toString() ?: songId
+            val artist = meta?.artists?.joinToString { it.name }
+                ?: mediaItem.mediaMetadata.artist?.toString()
+                ?: ""
+            scope.launch(Dispatchers.IO) {
+                interactionRepository.logPlay(
+                    songId    = songId,
+                    title     = title,
+                    artist    = artist,
+                    durationMs = playbackStats.totalPlayTimeMs,
+                )
+            }
+        }
+
+        // ── Existing listen history (threshold: 30 seconds) ───────────────────
         if (playbackStats.totalPlayTimeMs >= 30000 && !dataStore.get(PauseListenHistoryKey, false)) {
             database.query {
                 incrementTotalPlayTime(mediaItem.mediaId, playbackStats.totalPlayTimeMs)

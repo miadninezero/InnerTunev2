@@ -23,6 +23,37 @@
     <string name="your_youtube_playlists">Your YouTube playlists</string>
     <string name="similar_to">Similar to</string>
     <string name="new_release_albums">New release albums</string>
+    <string name="most_played">Most played</string>
+    <string name="most_played_empty">Listen to some music to see your favorites here.</string>
+    <string name="section_for_you">For You</string>
+    <string name="section_hot_in_area">Hot in Your Area</string>
+    <string name="section_global_top_50">Global Top 50</string>
+    <string name="recommendation_error">Couldn\'t load recommendations. Check your connection.</string>
+
+    <!-- Recommendation settings screen -->
+    <string name="rec_settings_title">Recommendations</string>
+    <string name="rec_settings_group_how_it_works">How it works</string>
+    <string name="rec_settings_how_it_works_title">Personalised recommendations</string>
+    <string name="rec_settings_how_it_works_body">InnerTune blends your listening history and likes with regional and global charts. Thumbing up a song surfaces more like it; thumbing down pushes it out of your personal feed.</string>
+    <string name="rec_settings_group_data">Your data</string>
+    <string name="rec_settings_reset_title">Reset interaction history</string>
+    <string name="rec_settings_reset_subtitle">Clear play history, likes and dislikes to start fresh</string>
+    <string name="rec_settings_reset_description">This will permanently delete all your play counts, likes, and dislikes. Your recommendations will reset to defaults. This cannot be undone.</string>
+
+    <!-- Activity-aware recommendations -->
+    <string name="rec_settings_group_activity">Activity-aware music</string>
+    <string name="rec_settings_activity_toggle_title">Activity-aware recommendations</string>
+    <string name="rec_settings_activity_toggle_subtitle">Automatically adjust music to match what you\'re doing</string>
+    <string name="rec_settings_activity_permission_rationale_title">Allow activity access?</string>
+    <string name="rec_settings_activity_permission_rationale_body">InnerTune can tailor the "For You" section to your current activity — energetic tracks when running, lo-fi when relaxing. Your activity data never leaves your device and is not stored anywhere.</string>
+    <string name="rec_settings_activity_permission_denied">Permission denied. Enable "Physical activity" for InnerTune in Android Settings.</string>
+    <string name="rec_settings_activity_status_running">Running 🏃</string>
+    <string name="rec_settings_activity_status_walking">Walking 🚶</string>
+    <string name="rec_settings_activity_status_still">Relaxing 🛋️</string>
+    <string name="rec_settings_activity_status_vehicle">In a vehicle 🚗</string>
+    <string name="rec_settings_activity_status_unknown">Detecting…</string>
+    <string name="allow">Allow</string>
+    <string name="open_settings">Open settings</string>
 
     <!-- History -->
     <string name="today">Today</string>

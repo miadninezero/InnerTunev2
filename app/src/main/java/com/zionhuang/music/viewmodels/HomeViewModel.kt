@@ -11,6 +11,8 @@ import com.zionhuang.innertube.models.filterExplicit
 import com.zionhuang.innertube.pages.ExplorePage
 import com.zionhuang.innertube.pages.HomePage
 import com.zionhuang.music.constants.HideExplicitKey
+import com.zionhuang.music.data.local.InteractionRepository
+import com.zionhuang.music.data.local.SongPlaySummary
 import com.zionhuang.music.db.MusicDatabase
 import com.zionhuang.music.db.entities.Album
 import com.zionhuang.music.db.entities.Artist
@@ -24,7 +26,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -32,6 +38,7 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     @ApplicationContext val context: Context,
     val database: MusicDatabase,
+    private val interactionRepository: InteractionRepository,
 ) : ViewModel() {
     val isRefreshing = MutableStateFlow(false)
     val isLoading = MutableStateFlow(false)
@@ -46,6 +53,22 @@ class HomeViewModel @Inject constructor(
 
     val allLocalItems = MutableStateFlow<List<LocalItem>>(emptyList())
     val allYtItems = MutableStateFlow<List<YTItem>>(emptyList())
+
+    /**
+     * Top-10 most-played songs from [InteractionRepository], ranked by total
+     * play duration. [null] while the first query is in flight; an empty list
+     * means no interactions have been logged yet (new user). Room keeps this
+     * Flow alive and re-emits whenever the `song_interaction` table changes,
+     * so the UI is always up to date without any manual refresh.
+     */
+    val mostPlayedSongs: StateFlow<List<SongPlaySummary>?> =
+        interactionRepository.getMostPlayedSongsFlow(limit = 10)
+            .map { it as List<SongPlaySummary>? }  // widen to nullable for initialValue = null
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = null,
+            )
 
     private suspend fun load() {
         isLoading.value = true

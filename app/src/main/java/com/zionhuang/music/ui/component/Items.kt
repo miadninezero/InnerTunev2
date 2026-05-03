@@ -251,6 +251,8 @@ fun SongListItem(
     showLikedIcon: Boolean = true,
     showInLibraryIcon: Boolean = false,
     showDownloadIcon: Boolean = true,
+    /** When true, thumb-up / thumb-down feedback buttons appear as trailing content. */
+    showFeedbackButtons: Boolean = false,
     badges: @Composable RowScope.() -> Unit = {
         if (showLikedIcon && song.song.liked) {
             Icon.Favorite()
@@ -283,7 +285,18 @@ fun SongListItem(
             modifier = Modifier.size(ListThumbnailSize)
         )
     },
-    trailingContent = trailingContent,
+    trailingContent = {
+        if (showFeedbackButtons) {
+            SongFeedbackButtons(
+                songId = song.id,
+                title = song.song.title,
+                artist = song.artists.joinToString { it.name },
+                iconSize = 20.dp,
+                spacing = 2.dp,
+            )
+        }
+        trailingContent()
+    },
     modifier = modifier
 )
 

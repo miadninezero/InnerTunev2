@@ -30,6 +30,7 @@ import com.zionhuang.music.ui.screens.settings.DiscordLoginScreen
 import com.zionhuang.music.ui.screens.settings.DiscordSettings
 import com.zionhuang.music.ui.screens.settings.PlayerSettings
 import com.zionhuang.music.ui.screens.settings.PrivacySettings
+import com.zionhuang.music.ui.screens.settings.RecommendationSettingsScreen
 import com.zionhuang.music.ui.screens.settings.SettingsScreen
 import com.zionhuang.music.ui.screens.settings.StorageSettings
 
@@ -216,6 +217,9 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/about") {
         AboutScreen(navController, scrollBehavior)
+    }
+    composable("settings/recommendations") {
+        RecommendationSettingsScreen(navController, scrollBehavior)
     }
     composable("login") {
         LoginScreen(navController)

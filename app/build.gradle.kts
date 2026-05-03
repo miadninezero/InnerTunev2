@@ -110,6 +110,7 @@ dependencies {
     implementation(libs.coroutines.guava)
     implementation(libs.concurrent.futures)
     implementation(libs.documentfile)
+    implementation(libs.play.services.location)   // ActivityRecognitionClient
 
     implementation(libs.activity)
     implementation(libs.navigation)

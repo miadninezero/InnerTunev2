@@ -80,6 +80,7 @@ timber = { group = "com.jakewharton.timber", name = "timber", version = "5.0.1" 
 
 google-services = { module = "com.google.gms:google-services", version = "4.4.2" }
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version = "33.2.0" }
+play-services-location = { group = "com.google.android.gms", name = "play-services-location", version = "21.3.0" }
 firebase-analytics = { group = "com.google.firebase", name = "firebase-analytics-ktx" }
 firebase-crashlytics = { group = "com.google.firebase", name = "firebase-crashlytics-ktx" }
 firebase-crashlytics-plugin = { module = "com.google.firebase:firebase-crashlytics-gradle", version = "3.0.2" }

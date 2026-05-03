@@ -98,6 +98,7 @@ import coil.request.ImageRequest
 import com.valentinilk.shimmer.LocalShimmerTheme
 import com.zionhuang.innertube.YouTube
 import com.zionhuang.innertube.models.SongItem
+import com.zionhuang.music.constants.ActivityAwareRecsKey
 import com.zionhuang.music.constants.AppBarHeight
 import com.zionhuang.music.constants.DarkModeKey
 import com.zionhuang.music.constants.DefaultOpenTabKey
@@ -165,6 +166,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var downloadUtil: DownloadUtil
 
+    @Inject
+    lateinit var activityRecognitionManager: com.zionhuang.music.data.recommendation.ActivityRecognitionManager
+
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -185,6 +189,10 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         startService(Intent(this, MusicService::class.java))
         bindService(Intent(this, MusicService::class.java), serviceConnection, Context.BIND_AUTO_CREATE)
+        // Re-engage activity recognition if the user had it enabled previously
+        if (dataStore.get(ActivityAwareRecsKey, false) && activityRecognitionManager.hasPermission()) {
+            activityRecognitionManager.start()
+        }
     }
 
     override fun onStop() {

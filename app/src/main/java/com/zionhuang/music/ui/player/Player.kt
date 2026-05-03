@@ -83,6 +83,7 @@ import com.zionhuang.music.ui.screens.settings.PlayerTextAlignment
 import com.zionhuang.music.utils.makeTimeString
 import com.zionhuang.music.utils.rememberEnumPreference
 import com.zionhuang.music.utils.rememberPreference
+import com.zionhuang.music.ui.component.SongFeedbackButtons
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import me.saket.squiggles.SquigglySlider
@@ -375,6 +376,25 @@ fun BottomSheetPlayer(
                         onClick = playerConnection.player::toggleRepeatMode
                     )
                 }
+            }
+
+            // ── Feedback (thumb up / thumb down) ─────────────────────────────
+            Spacer(Modifier.height(16.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = PlayerHorizontalPadding)
+            ) {
+                SongFeedbackButtons(
+                    songId = mediaMetadata.id,
+                    title = mediaMetadata.title,
+                    artist = mediaMetadata.artists.joinToString { it.name },
+                    iconSize = 28.dp,
+                    spacing = 24.dp,
+                )
             }
         }
 

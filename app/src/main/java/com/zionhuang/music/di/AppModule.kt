@@ -7,6 +7,8 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import com.zionhuang.music.constants.MaxSongCacheSizeKey
+import com.zionhuang.music.data.local.InteractionDao
+import com.zionhuang.music.data.local.InteractionDatabase
 import com.zionhuang.music.db.InternalDatabase
 import com.zionhuang.music.db.MusicDatabase
 import com.zionhuang.music.utils.dataStore
@@ -34,6 +36,17 @@ object AppModule {
     @Provides
     fun provideDatabase(@ApplicationContext context: Context): MusicDatabase =
         InternalDatabase.newInstance(context)
+
+    // ── Interaction / recommendation database ────────────────────────────────
+
+    @Singleton
+    @Provides
+    fun provideInteractionDatabase(@ApplicationContext context: Context): InteractionDatabase =
+        InteractionDatabase.newInstance(context)
+
+    @Singleton
+    @Provides
+    fun provideInteractionDao(db: InteractionDatabase): InteractionDao = db.dao
 
     @Singleton
     @Provides

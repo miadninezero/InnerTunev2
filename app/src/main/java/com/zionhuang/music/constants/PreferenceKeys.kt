@@ -53,6 +53,10 @@ val PauseSearchHistoryKey = booleanPreferencesKey("pauseSearchHistory")
 val UseLoginForBrowse = booleanPreferencesKey("useLoginForBrowse")
 val DisableScreenshotKey = booleanPreferencesKey("disableScreenshot")
 
+// ── Activity-aware recommendations ───────────────────────────────────────────
+/** Master switch: show activity-context-aware "For You" results. */
+val ActivityAwareRecsKey = booleanPreferencesKey("activityAwareRecs")
+
 val DiscordTokenKey = stringPreferencesKey("discordToken")
 val DiscordInfoDismissedKey = booleanPreferencesKey("discordInfoDismissed_v2")
 val DiscordUsernameKey = stringPreferencesKey("discordUsername")

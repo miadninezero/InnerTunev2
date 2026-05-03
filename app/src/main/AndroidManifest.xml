@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
+    <!-- Activity Recognition (opt-in, privacy-first) -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" />
+
     <queries>
         <intent>
             <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
@@ -155,6 +159,15 @@
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
+
+        <!-- Activity Recognition receiver (for activity-aware recommendations) -->
+        <receiver
+            android:name=".data.recommendation.ActivityUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.zionhuang.music.ACTION_ACTIVITY_UPDATE" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
