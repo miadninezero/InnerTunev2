@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
@@ -46,6 +47,8 @@ import com.zionhuang.music.constants.DarkModeKey
 import com.zionhuang.music.constants.DefaultOpenTabKey
 import com.zionhuang.music.constants.DynamicThemeKey
 import com.zionhuang.music.constants.GridCellSize
+import com.zionhuang.music.constants.BlurType
+import com.zionhuang.music.constants.BlurTypeKey
 import com.zionhuang.music.constants.GridCellSizeKey
 import com.zionhuang.music.constants.PlayerTextAlignmentKey
 import com.zionhuang.music.constants.PureBlackKey
@@ -75,6 +78,9 @@ fun AppearanceSettings(
     val (sliderStyle, onSliderStyleChange) = rememberEnumPreference(SliderStyleKey, defaultValue = SliderStyle.DEFAULT)
     val (defaultOpenTab, onDefaultOpenTabChange) = rememberEnumPreference(DefaultOpenTabKey, defaultValue = NavigationTab.HOME)
     val (gridCellSize, onGridCellSizeChange) = rememberEnumPreference(GridCellSizeKey, defaultValue = GridCellSize.SMALL)
+    val (premiumBlur, onPremiumBlurChange) = rememberPreference(com.zionhuang.music.constants.PremiumBlurKey, defaultValue = false)
+    val ctx = LocalContext.current
+    val (blurType, onBlurTypeChange) = rememberEnumPreference(BlurTypeKey, defaultValue = BlurType.FROSTED)
 
     val isSystemInDarkTheme = isSystemInDarkTheme()
     val useDarkTheme = remember(darkMode, isSystemInDarkTheme) {
@@ -285,6 +291,40 @@ fun AppearanceSettings(
                 }
             },
         )
+
+        SwitchPreference(
+            title = { Text(stringResource(R.string.enable_premium_blur)) },
+            description = stringResource(R.string.enable_premium_blur_desc),
+            checked = premiumBlur,
+            onCheckedChange = onPremiumBlurChange
+        )
+
+        PreferenceGroupTitle(title = stringResource(R.string.debug))
+
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.export_logs)) },
+            description = stringResource(R.string.export_logs_desc),
+            icon = { Icon(painterResource(R.drawable.palette), null) },
+            onClick = {
+                // Use application context to start share chooser
+                com.zionhuang.music.utils.LogBuffer.exportAndShare(ctx.applicationContext)
+            }
+        )
+
+        AnimatedVisibility(premiumBlur) {
+            EnumListPreference(
+                title = { Text(stringResource(R.string.blur_type)) },
+                icon = { Icon(painterResource(R.drawable.palette), null) },
+                selectedValue = blurType,
+                onValueSelected = onBlurTypeChange,
+                valueText = {
+                    when (it) {
+                        BlurType.FROSTED -> stringResource(R.string.blur_type_frosted)
+                        BlurType.LIQUID_IOS -> stringResource(R.string.blur_type_liquid_ios)
+                    }
+                }
+            )
+        }
     }
 
     TopAppBar(

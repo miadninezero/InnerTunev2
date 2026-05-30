@@ -101,7 +101,10 @@ class DownloadUtil @Inject constructor(
             YouTube.player(mediaId)
         }.getOrThrow()
         if (playerResponse.playabilityStatus.status != "OK") {
-            throw PlaybackException(playerResponse.playabilityStatus.reason, null, PlaybackException.ERROR_CODE_REMOTE_ERROR)
+            val reason = playerResponse.playabilityStatus.reason
+            val userMessage = com.zionhuang.music.utils.PlayabilityUtil.userMessageForReason(context, reason)
+            com.zionhuang.music.utils.LogBuffer.appendToLiveFile(context, "DownloadUtil", "W", "playabilityStatus not OK for $mediaId: reason=$reason")
+            throw PlaybackException(userMessage, null, PlaybackException.ERROR_CODE_REMOTE_ERROR)
         }
 
         val format =

@@ -8,7 +8,6 @@ plugins {
     kotlin("kapt")
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.ksp)
-    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
 }
 
@@ -51,15 +50,6 @@ android {
         }
     }
 
-//    splits {
-//        abi {
-//            isEnable = true
-//            reset()
-//            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-//            isUniversalApk = false
-//        }
-//    }
-    
     signingConfigs {
         getByName("debug") {
             if (System.getenv("MUSIC_DEBUG_SIGNING_STORE_PASSWORD") != null) {
@@ -90,11 +80,8 @@ android {
         unitTests.isIncludeAndroidResources = true
         unitTests.isReturnDefaultValues = true
     }
-    // avoid DEPENDENCY_INFO_BLOCK for IzzyOnDroid
     dependenciesInfo {
-        // Disables dependency metadata when building APKs.
         includeInApk = false
-        // Disables dependency metadata when building Android App Bundles.
         includeInBundle = false
     }
     lint {
@@ -135,10 +122,6 @@ dependencies {
     implementation(libs.squigglyslider)
 
     implementation(libs.coil)
-    // Serialization for kotlinx
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.0")
-    // Material icons (extended) for Compose
-    implementation("androidx.compose.material:material-icons-extended:1.6.8")
 
     implementation(libs.shimmer)
 

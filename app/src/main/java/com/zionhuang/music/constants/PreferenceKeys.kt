@@ -130,6 +130,15 @@ val ShowLyricsKey = booleanPreferencesKey("showLyrics")
 val TranslateLyricsKey = booleanPreferencesKey("translateLyrics")
 val LockQueueKey = booleanPreferencesKey("lockQueue")
 
+val PremiumBlurKey = booleanPreferencesKey("premiumBlur")
+
+val BlurTypeKey = stringPreferencesKey("blurType")
+
+enum class BlurType {
+    FROSTED,
+    LIQUID_IOS
+}
+
 val PlayerVolumeKey = floatPreferencesKey("playerVolume")
 val RepeatModeKey = intPreferencesKey("repeatMode")
 

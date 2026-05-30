@@ -44,6 +44,7 @@ import com.zionhuang.innertube.pages.NextPage
 import com.zionhuang.innertube.pages.NextResult
 import com.zionhuang.innertube.pages.PlaylistContinuationPage
 import com.zionhuang.innertube.pages.PlaylistPage
+import com.zionhuang.innertube.pages.LibraryPage
 import com.zionhuang.innertube.pages.RelatedPage
 import com.zionhuang.innertube.pages.SearchPage
 import com.zionhuang.innertube.pages.SearchResult
@@ -324,6 +325,23 @@ object YouTube {
         )
     }
 
+    suspend fun libraryContinuation(continuation: String) = runCatching {
+        val response = innerTube.browse(
+            client = WEB_REMIX,
+            continuation = continuation,
+            setLogin = true
+        ).body<BrowseResponse>()
+
+        val section = response.continuationContents?.sectionListContinuation
+
+        // Conservative implementation: return empty items list and preserve continuation token.
+        // We avoid attempting to parse many possible renderer shapes here — add richer parsing later if needed.
+        LibraryPage(
+            items = emptyList(),
+            continuation = section?.continuations?.getContinuation()
+        )
+    }
+
     suspend fun home(): Result<HomePage> = runCatching {
         var response = innerTube.browse(WEB_REMIX, browseId = "FEmusic_home").body<BrowseResponse>()
         var continuation = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
@@ -429,16 +447,24 @@ object YouTube {
      *   3. IOS v21.03.1 — iOS client
      *   4. TVHTML5_SIMPLY_EMBEDDED_PLAYER — embedded, bypasses age restrictions
      *   5. TVHTML5 — full TV client, last resort
+     *
+     * If all InnerTube clients fail (e.g. all return ciphered URLs), falls back
+     * to the Piped API which decodes signatureCipher server-side.
      */
     suspend fun player(videoId: String, playlistId: String? = null): Result<PlayerResponse> = runCatching {
         val log = Logger.getLogger("YTPlayer")
 
+        // Try a broader set of clients. Prefer Android Music and VR no-auth clients first
+        // (they tend to expose playable streams without requiring login). Keep WEB
+        // as a last-resort fallback.
         val fallbackClients = listOf(
-            WEB_REMIX,
+            ANDROID_MUSIC,
             ANDROID_VR_NO_AUTH,
+            WEB_REMIX,
             IOS,
             TVHTML5_SIMPLY_EMBEDDED_PLAYER,
-            TVHTML5
+            TVHTML5,
+            WEB
         )
 
         var lastResponse: PlayerResponse? = null
@@ -449,14 +475,16 @@ object YouTube {
                 val response = innerTube.player(client, videoId, playlistId).body<PlayerResponse>()
                 val status = response.playabilityStatus.status
                 val reason = response.playabilityStatus.reason
-                log.info("[$videoId] ${client.clientName} → status=$status reason=$reason")
+                val adaptiveCount = response.streamingData?.adaptiveFormats?.size ?: 0
+                val formatCount = response.streamingData?.formats?.size ?: 0
+                log.info("[$videoId] ${client.clientName} → status=$status reason=$reason formats=$formatCount adaptive=$adaptiveCount")
 
                 if (status == "OK") {
                     // Verify there are actual stream URLs available
                     val hasStreams = response.streamingData?.adaptiveFormats?.any { it.url != null } == true
                             || response.streamingData?.formats?.any { it.url != null } == true
                     if (hasStreams) {
-                        log.info("[$videoId] ${client.clientName} has valid streams — using this response")
+                        log.info("[$videoId] ${client.clientName} has valid streams (formats=$formatCount adaptive=$adaptiveCount) — using this response")
                         return@runCatching response
                     } else {
                         log.warning("[$videoId] ${client.clientName} status=OK but NO stream URLs (may need signature decoding) — trying next client")
@@ -471,9 +499,37 @@ object YouTube {
             }
         }
 
-        // All clients failed or returned no streams — return last response for error reporting
-        log.severe("[$videoId] All clients exhausted. Returning last known response.")
-        lastResponse ?: throw Exception("All YouTube clients failed for videoId=$videoId")
+        // All InnerTube clients failed — try Piped API as last resort.
+        // Piped decodes YouTube's signatureCipher server-side and returns direct URLs.
+        log.info("[$videoId] All InnerTube clients exhausted — trying Piped API fallback")
+        val pipedInstances = listOf(
+            "https://pipedapi.kavin.rocks",
+            "https://piped-api.privacydev.net",
+            "https://api.piped.projectsegfau.lt",
+        )
+
+        for (instance in pipedInstances) {
+            try {
+                log.info("[$videoId] Trying Piped instance: $instance")
+                val pipedResponse = innerTube.pipedStreams(videoId, instance).body<PipedResponse>()
+                val audioCount = pipedResponse.audioStreams.size
+                log.info("[$videoId] Piped ($instance) returned $audioCount audio streams")
+
+                if (audioCount > 0) {
+                    val playerResponse = pipedResponse.toPlayerResponse(videoId)
+                    log.info("[$videoId] Piped fallback SUCCESS via $instance — ${audioCount} audio streams available")
+                    return@runCatching playerResponse
+                } else {
+                    log.warning("[$videoId] Piped ($instance) returned 0 audio streams — trying next instance")
+                }
+            } catch (e: Exception) {
+                log.warning("[$videoId] Piped ($instance) threw ${e.javaClass.simpleName}: ${e.message}")
+            }
+        }
+
+        // Everything failed — return last InnerTube response for error reporting
+        log.severe("[$videoId] All clients AND Piped instances exhausted. Returning last known response.")
+        lastResponse ?: throw Exception("All YouTube clients and Piped instances failed for videoId=$videoId")
     }
 
     suspend fun next(endpoint: WatchEndpoint, continuation: String? = null): Result<NextResult> = runCatching {

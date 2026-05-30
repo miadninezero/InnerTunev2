@@ -42,7 +42,8 @@ data class YouTubeClient(
 
         val ANDROID_MUSIC = YouTubeClient(
             clientName = "ANDROID_MUSIC",
-            clientVersion = "7.25.52",
+            // bumped minor version for compatibility testing
+            clientVersion = "8.0.0",
             clientId = "21",
             api_key = "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI",
             userAgent = USER_AGENT_ANDROID_MUSIC,
@@ -60,7 +61,7 @@ data class YouTubeClient(
 
         val WEB = YouTubeClient(
             clientName = "WEB",
-            clientVersion = "2.20260213.00.00",
+            clientVersion = "2.20260530.00.00",
             clientId = "1",
             api_key = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3",
             userAgent = USER_AGENT_WEB,
@@ -69,7 +70,7 @@ data class YouTubeClient(
 
         val WEB_REMIX = YouTubeClient(
             clientName = "WEB_REMIX",
-            clientVersion = "1.20260213.01.00",
+            clientVersion = "1.20260530.01.00",
             clientId = "67",
             api_key = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3",
             userAgent = USER_AGENT_WEB,
@@ -80,7 +81,7 @@ data class YouTubeClient(
         // TVHTML5 full TV client — supports login for age-restricted content
         val TVHTML5 = YouTubeClient(
             clientName = "TVHTML5",
-            clientVersion = "7.20260213.00.00",
+            clientVersion = "7.20260530.00.00",
             clientId = "7",
             api_key = "AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8",
             userAgent = USER_AGENT_TV,
@@ -99,10 +100,10 @@ data class YouTubeClient(
         // IOS client v21.03.1 — NO login support via SAPISID
         val IOS = YouTubeClient(
             clientName = "IOS",
-            clientVersion = "21.03.1",
+            clientVersion = "21.03.2",
             clientId = "5",
             api_key = "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc",
-            userAgent = "com.google.ios.youtube/21.03.1 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
+            userAgent = "com.google.ios.youtube/21.03.2 (iPhone16,2; U; CPU iOS 18_2 like Mac OS X;)",
             osVersion = "18.2.22C152",
             loginSupported = false  // MUST be false — sending auth causes rejection
         )

@@ -1,8 +1,13 @@
+
 plugins {
     kotlin("jvm")
     @Suppress("DSL_SCOPE_VIOLATION")
     alias(libs.plugins.kotlin.serialization)
 }
+
+// Library coordinates for the innertube module; bump when updating client configs
+group = "com.zionhuang.innertube"
+version = "1.1.0"
 
 kotlin {
     jvmToolchain(17)

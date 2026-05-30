@@ -4,22 +4,45 @@ import com.zionhuang.innertube.YouTube
 import com.zionhuang.innertube.pages.PlaylistPage
 import java.security.MessageDigest
 
-suspend fun Result<PlaylistPage>.completed() = runCatching {
-    val page = getOrThrow()
-    val songs = page.songs.toMutableList()
-    var continuation = page.songsContinuation
-    while (continuation != null) {
-        val continuationPage = YouTube.playlistContinuation(continuation).getOrNull() ?: break
-        songs += continuationPage.songs
-        continuation = continuationPage.continuation
+@JvmName("completedLibrary")
+suspend fun Result<PlaylistPage>.completed(): Result<PlaylistPage> =
+    runCatching {
+        val page = getOrThrow()
+        val songs = page.songs.toMutableList()
+        var continuation = page.songsContinuation
+        val seenContinuations = mutableSetOf<String>()
+        var requestCount = 0
+        val maxRequests = 50
+        var consecutiveEmptyResponses = 0
+
+        while (continuation != null && requestCount < maxRequests) {
+            if (continuation in seenContinuations) break
+            seenContinuations.add(continuation)
+            requestCount++
+
+            val continuationPage =
+                YouTube.playlistContinuation(continuation).getOrNull() ?: break
+
+            if (continuationPage.songs.isEmpty()) {
+                consecutiveEmptyResponses++
+                if (consecutiveEmptyResponses >= 2) break
+            } else {
+                consecutiveEmptyResponses = 0
+                songs += continuationPage.songs
+            }
+
+            continuation = continuationPage.continuation
+        }
+
+        PlaylistPage(
+            playlist = page.playlist,
+            songs = songs,
+            songsContinuation = null,
+            continuation = page.continuation
+        )
     }
-    PlaylistPage(
-        playlist = page.playlist,
-        songs = songs,
-        songsContinuation = null,
-        continuation = page.continuation
-    )
-}
+
+// Note: LibraryPage helpers removed — this project does not define LibraryPage.
 
 fun ByteArray.toHex(): String = joinToString(separator = "") { eachByte -> "%02x".format(eachByte) }
 
@@ -28,10 +51,11 @@ fun sha1(str: String): String = MessageDigest.getInstance("SHA-1").digest(str.to
 fun parseCookieString(cookie: String): Map<String, String> =
     cookie.split("; ")
         .filter { it.isNotEmpty() }
-        .associate {
-            val (key, value) = it.split("=")
-            key to value
+        .mapNotNull { part ->
+            val splitIndex = part.indexOf('=')
+            if (splitIndex == -1) null else part.substring(0, splitIndex) to part.substring(splitIndex + 1)
         }
+        .toMap()
 
 fun String.parseTime(): Int? {
     try {

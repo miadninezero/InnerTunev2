@@ -4,7 +4,7 @@ import android.content.Context
 import com.zionhuang.innertube.YouTube
 import com.zionhuang.innertube.models.WatchEndpoint
 
-object YouTubeLyricsProvider : LyricsProvider {
+object YouTubeMusicProvider : LyricsProvider {
     override val name = "YouTube Music"
     override fun isEnabled(context: Context) = true
     override suspend fun getLyrics(id: String, title: String, artist: String, duration: Int): Result<String> = runCatching {

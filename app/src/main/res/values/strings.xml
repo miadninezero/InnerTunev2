@@ -203,6 +203,11 @@
     <string name="error_no_internet">No network connection</string>
     <string name="error_timeout">Timeout</string>
     <string name="error_unknown">Unknown error</string>
+    <string name="error_playability_reason">Playback unavailable: %1$s</string>
+    <string name="error_playability_geo">Not available in your country</string>
+    <string name="error_playability_private">This video is private</string>
+    <string name="error_playability_login">Login required to play this content</string>
+    <string name="error_playability_age">Age-restricted content — sign in to verify age</string>
 
     <!-- Player action -->
     <string name="action_like">Like</string>
@@ -248,6 +253,17 @@
     <string name="grid_cell_size">Grid cell size</string>
     <string name="small">Small</string>
     <string name="big">Big</string>
+
+    <string name="enable_premium_blur">Enable premium frosted blur</string>
+    <string name="enable_premium_blur_desc">Enable frosted glass blur on capable devices (may impact performance)</string>
+
+    <string name="blur_type">Frosted blur style</string>
+    <string name="blur_type_frosted">Frosted</string>
+    <string name="blur_type_liquid_ios">Liquid (iOS)</string>
+
+    <string name="debug">Debug</string>
+    <string name="export_logs">Export logs</string>
+    <string name="export_logs_desc">Export recent app logs for debugging and sharing</string>
 
     <string name="content">Content</string>
     <string name="action_logout">Log out</string>
