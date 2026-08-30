@@ -58,9 +58,8 @@ fun ContentSettings(
     val accountName by rememberPreference(AccountNameKey, "")
     val accountEmail by rememberPreference(AccountEmailKey, "")
     val accountChannelHandle by rememberPreference(AccountChannelHandleKey, "")
-    val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
-    val isLoggedIn = remember(innerTubeCookie) {
-        "SAPISID" in parseCookieString(innerTubeCookie)
+    val isLoggedIn = remember(accountName, accountEmail) {
+        accountName.isNotEmpty() || accountEmail.isNotEmpty()
     }
     val (contentLanguage, onContentLanguageChange) = rememberPreference(key = ContentLanguageKey, defaultValue = "system")
     val (contentCountry, onContentCountryChange) = rememberPreference(key = ContentCountryKey, defaultValue = "system")

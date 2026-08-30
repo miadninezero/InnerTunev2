@@ -625,7 +625,7 @@ class MusicService : MediaLibraryService(),
                                 OkHttpClient.Builder()
                                     .proxy(YouTube.proxy)
                                     .build()
-                            )
+                            ).setUserAgent("com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; en_US; Oculus Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)")
                         )
                     )
             )
@@ -701,94 +701,9 @@ class MusicService : MediaLibraryService(),
                         }
                 } ?: throw PlaybackException(getString(R.string.error_no_stream), null, ERROR_CODE_NO_STREAM)
 
-            // Robust preflight + retry: probe the chosen URL and retry/rescue on 403 with
-            // exponential backoff and format re-resolution. This helps recover from
-            // expired/denied signed URLs.
-            try {
-                val maxRetries = 3
-                var attempt = 0
-                var lastRespCode: Int? = null
-
-                while (attempt < maxRetries) {
-                    attempt += 1
-                    val url = format.url
-                    if (url.isNullOrEmpty()) break
-
-                    try {
-                        val client = OkHttpClient.Builder().proxy(YouTube.proxy).build()
-                        val req = Request.Builder().url(url).head().build()
-                        val resp = client.newCall(req).execute()
-                        lastRespCode = resp.code
-                        if (resp.isSuccessful) {
-                            // 2xx → URL appears valid
-                            if (attempt > 1) com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "I", "Preflight succeeded on attempt=$attempt for mediaId=$mediaId status=${resp.code}")
-                            break
-                        }
-
-                        if (resp.code == 403) {
-                            com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "W", "Preflight HEAD returned 403 (attempt=$attempt) for mediaId=$mediaId — invalidating cached format and re-resolving")
-                            // Invalidate cached format and try to re-resolve
-                            runBlocking(Dispatchers.IO) { database.query { deleteFormat(mediaId) } }
-                            val retryResponse = runBlocking(Dispatchers.IO) { YouTube.player(mediaId) }.getOrElse { throwable ->
-                                com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "E", "player() failed during retry for $mediaId: ${throwable.message}", throwable)
-                                when (throwable) {
-                                    is ConnectException, is UnknownHostException -> {
-                                        throw PlaybackException(getString(R.string.error_no_internet), throwable, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
-                                    }
-
-                                    is SocketTimeoutException -> {
-                                        throw PlaybackException(getString(R.string.error_timeout), throwable, PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT)
-                                    }
-
-                                    else -> throw PlaybackException(getString(R.string.error_unknown), throwable, PlaybackException.ERROR_CODE_REMOTE_ERROR)
-                                }
-                            }
-
-                            if (retryResponse.playabilityStatus.status == "OK") {
-                                val newFormat = retryResponse.streamingData?.adaptiveFormats
-                                    ?.filter { it.isAudio }
-                                    ?.maxByOrNull { it.bitrate }
-                                if (newFormat != null) {
-                                    format = newFormat
-                                }
-                            }
-
-                            // If not last attempt, sleep with exponential backoff before retrying
-                            if (attempt < maxRetries) {
-                                val backoff = 500L * (1 shl (attempt - 1)) // 500ms, 1000ms, 2000ms
-                                com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "D", "Preflight backing off ${backoff}ms (attempt=$attempt) for mediaId=$mediaId")
-                                runBlocking { Thread.sleep(backoff) }
-                                continue
-                            }
-                        } else {
-                            com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "W", "Preflight HEAD returned ${resp.code} for mediaId=$mediaId (attempt=$attempt)")
-                            // Non-403 failures: retry a couple times in case of transient server issues
-                            if (attempt < maxRetries) {
-                                val backoff = 500L * (1 shl (attempt - 1))
-                                runBlocking { Thread.sleep(backoff) }
-                                continue
-                            }
-                        }
-                    } catch (e: Exception) {
-                        com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "W", "Preflight check failed on attempt=$attempt: ${e.message}", e)
-                        if (attempt < maxRetries) {
-                            val backoff = 500L * (1 shl (attempt - 1))
-                            runBlocking { Thread.sleep(backoff) }
-                            continue
-                        }
-                    }
-                }
-
-                if (lastRespCode == 403) {
-                    // After retries we still got 403 — surface as no stream
-                    com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "E", "Preflight ultimately returned 403 after $maxRetries attempts for mediaId=$mediaId")
-                    throw PlaybackException(getString(R.string.error_no_stream), null, ERROR_CODE_NO_STREAM)
-                }
-            } catch (e: PlaybackException) {
-                throw e
-            } catch (e: Exception) {
-                // non-fatal, continue with chosen format but log
-                com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "W", "Preflight outer exception: ${e.message}", e)
+            val formatUrl = format.url
+            if (formatUrl.isNullOrEmpty()) {
+                throw PlaybackException(getString(R.string.error_no_stream), null, ERROR_CODE_NO_STREAM)
             }
 
             database.query {
@@ -797,7 +712,7 @@ class MusicService : MediaLibraryService(),
                         id = mediaId,
                         itag = format.itag,
                         mimeType = format.mimeType.split(";")[0],
-                        codecs = format.mimeType.split("codecs=")[1].removeSurrounding("\""),
+                        codecs = format.mimeType.split("codecs=").getOrNull(1)?.removeSurrounding("\"") ?: "opus",
                         bitrate = format.bitrate,
                         sampleRate = format.audioSampleRate,
                         contentLength = format.contentLength ?: 0L,

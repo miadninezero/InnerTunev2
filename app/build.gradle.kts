@@ -1,21 +1,12 @@
 @file:Suppress("UnstableApiUsage")
 
-val isFullBuild: Boolean by rootProject.extra
-
 plugins {
     id("com.android.application")
     kotlin("android")
-    kotlin("kapt")
     alias(libs.plugins.hilt)
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.compose.compiler)
-}
-
-if (isFullBuild && System.getenv("PULL_REQUEST") == null) {
-    apply(plugin = "com.google.gms.google-services")
-    apply(plugin = "com.google.firebase.crashlytics")
-    apply(plugin = "com.google.firebase.firebase-perf")
 }
 
 android {
@@ -23,12 +14,20 @@ android {
     compileSdk = 35
     buildToolsVersion = "35.0.0"
     defaultConfig {
-        applicationId = "com.zionhuang.music"
+        applicationId = "com.aistudio.innertune.vntqpk"
         minSdk = 24
         targetSdk = 35
         versionCode = 26
         versionName = "0.5.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    signingConfigs {
+        create("debugConfig") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
     buildTypes {
         release {
@@ -38,36 +37,8 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
+            signingConfig = signingConfigs.getByName("debugConfig")
             applicationIdSuffix = ".debug"
-        }
-    }
-    flavorDimensions += "version"
-    productFlavors {
-        create("full") {
-            dimension = "version"
-        }
-        create("foss") {
-            dimension = "version"
-        }
-    }
-
-//    splits {
-//        abi {
-//            isEnable = true
-//            reset()
-//            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
-//            isUniversalApk = false
-//        }
-//    }
-    
-    signingConfigs {
-        getByName("debug") {
-            if (System.getenv("MUSIC_DEBUG_SIGNING_STORE_PASSWORD") != null) {
-                storeFile = file(System.getenv("MUSIC_DEBUG_KEYSTORE_FILE"))
-                storePassword = System.getenv("MUSIC_DEBUG_SIGNING_STORE_PASSWORD")
-                keyAlias = "debug"
-                keyPassword = System.getenv("MUSIC_DEBUG_SIGNING_KEY_PASSWORD")
-            }
         }
     }
     buildFeatures {
@@ -76,15 +47,15 @@ android {
     }
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     kotlin {
-        jvmToolchain(17)
+        jvmToolchain(21)
     }
     kotlinOptions {
         freeCompilerArgs = freeCompilerArgs + "-Xcontext-receivers"
-        jvmTarget = "17"
+        jvmTarget = "21"
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -109,6 +80,7 @@ ksp {
 dependencies {
     implementation(libs.guava)
     implementation(libs.coroutines.guava)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation(libs.concurrent.futures)
     implementation(libs.documentfile)
 
@@ -153,7 +125,7 @@ dependencies {
     implementation(libs.apache.lang3)
 
     implementation(libs.hilt)
-    kapt(libs.hilt.compiler)
+    ksp(libs.hilt.compiler)
 
     implementation(projects.innertube)
     implementation(projects.kugou)
@@ -164,14 +136,14 @@ dependencies {
 
     coreLibraryDesugaring(libs.desugaring)
 
-    "fullImplementation"(platform(libs.firebase.bom))
-    "fullImplementation"(libs.firebase.analytics)
-    "fullImplementation"(libs.firebase.crashlytics)
-    "fullImplementation"(libs.firebase.config)
-    "fullImplementation"(libs.firebase.perf)
-    "fullImplementation"(libs.mlkit.language.id)
-    "fullImplementation"(libs.mlkit.translate)
-    "fullImplementation"(libs.opencc4j)
+    implementation(libs.mlkit.language.id)
+    implementation(libs.mlkit.translate)
+    implementation(libs.opencc4j)
 
     implementation(libs.timber)
+
+    testImplementation(libs.junit)
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
 }

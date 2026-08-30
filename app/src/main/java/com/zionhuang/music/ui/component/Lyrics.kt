@@ -247,18 +247,16 @@ fun Lyrics(
                     .align(Alignment.BottomEnd)
                     .padding(end = 12.dp)
             ) {
-                if (BuildConfig.FLAVOR != "foss") {
-                    IconButton(
-                        onClick = {
-                            translationEnabled = !translationEnabled
-                        }
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.translate),
-                            contentDescription = null,
-                            tint = LocalContentColor.current.copy(alpha = if (translationEnabled) 1f else 0.3f)
-                        )
+                IconButton(
+                    onClick = {
+                        translationEnabled = !translationEnabled
                     }
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.translate),
+                        contentDescription = null,
+                        tint = LocalContentColor.current.copy(alpha = if (translationEnabled) 1f else 0.3f)
+                    )
                 }
 
                 IconButton(

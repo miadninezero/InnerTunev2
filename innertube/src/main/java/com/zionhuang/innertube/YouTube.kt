@@ -458,12 +458,12 @@ object YouTube {
         // (they tend to expose playable streams without requiring login). Keep WEB
         // as a last-resort fallback.
         val fallbackClients = listOf(
-            ANDROID_MUSIC,
             ANDROID_VR_NO_AUTH,
-            WEB_REMIX,
             IOS,
-            TVHTML5_SIMPLY_EMBEDDED_PLAYER,
+            ANDROID_MUSIC,
+            WEB_REMIX,
             TVHTML5,
+            TVHTML5_SIMPLY_EMBEDDED_PLAYER,
             WEB
         )
 

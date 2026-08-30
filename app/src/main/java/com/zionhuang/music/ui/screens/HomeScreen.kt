@@ -62,6 +62,8 @@ import com.zionhuang.music.LocalDatabase
 import com.zionhuang.music.LocalPlayerAwareWindowInsets
 import com.zionhuang.music.LocalPlayerConnection
 import com.zionhuang.music.R
+import com.zionhuang.music.constants.AccountEmailKey
+import com.zionhuang.music.constants.AccountNameKey
 import com.zionhuang.music.constants.GridThumbnailHeight
 import com.zionhuang.music.constants.InnerTubeCookieKey
 import com.zionhuang.music.constants.ListItemHeight
@@ -137,9 +139,10 @@ fun HomeScreen(
     val quickPicksLazyGridState = rememberLazyGridState()
     val forgottenFavoritesLazyGridState = rememberLazyGridState()
 
-    val innerTubeCookie by rememberPreference(InnerTubeCookieKey, "")
-    val isLoggedIn = remember(innerTubeCookie) {
-        "SAPISID" in parseCookieString(innerTubeCookie)
+    val accountName by rememberPreference(AccountNameKey, "")
+    val accountEmail by rememberPreference(AccountEmailKey, "")
+    val isLoggedIn = remember(accountName, accountEmail) {
+        accountName.isNotEmpty() || accountEmail.isNotEmpty()
     }
 
     val scope = rememberCoroutineScope()

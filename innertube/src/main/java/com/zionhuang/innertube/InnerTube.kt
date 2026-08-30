@@ -124,31 +124,20 @@ class InnerTube {
 
     private fun HttpRequestBuilder.ytClient(client: YouTubeClient, setLogin: Boolean = false) {
         contentType(ContentType.Application.Json)
+        val origin = if (client == YouTubeClient.WEB_REMIX || client == YouTubeClient.ANDROID_MUSIC) {
+            YouTubeClient.ORIGIN_YOUTUBE_MUSIC
+        } else {
+            "https://www.youtube.com"
+        }
         headers {
             append("X-Goog-Api-Format-Version", "1")
-            // X-YouTube-Client-Name MUST be the numeric clientId (not the string name)
-            // e.g. "67" for WEB_REMIX, "5" for IOS, "28" for ANDROID_VR
             append("X-YouTube-Client-Name", client.clientId)
             append("X-YouTube-Client-Version", client.clientVersion)
-            append("X-Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
-            append("Referer", YouTubeClient.ORIGIN_YOUTUBE_MUSIC + "/")
-            visitorData?.let { append("X-Goog-Visitor-Id", it) }
-            // CRITICAL: Only send auth headers for clients with loginSupported=true.
-            // Sending Authorization to IOS/ANDROID_VR/embedded clients causes YouTube
-            // to return "YouTube is no longer supported in this device" errors.
-            if (setLogin && client.loginSupported) {
-                cookie?.let { cookie ->
-                    append("cookie", cookie)
-                    if ("SAPISID" !in cookieMap) return@let
-                    val currentTime = System.currentTimeMillis() / 1000
-                    val sapisidHash = sha1("$currentTime ${cookieMap["SAPISID"]} ${YouTubeClient.ORIGIN_YOUTUBE_MUSIC}")
-                    append("Authorization", "SAPISIDHASH ${currentTime}_${sapisidHash}")
-                }
-            }
+            append("X-Origin", origin)
+            append("Referer", "$origin/")
+            visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
         }
         userAgent(client.userAgent)
-        // DO NOT send ?key= parameter — YouTube rejects legacy AIzaSy... API keys.
-        // Estrella-Music (working fork) sends NO api_key for any endpoint.
         parameter("prettyPrint", false)
     }
 
@@ -177,24 +166,25 @@ class InnerTube {
         videoId: String,
         playlistId: String?,
     ) = withRetry {
-        httpClient.post("player") {
+        val endpoint = if (client == YouTubeClient.WEB_REMIX || client == YouTubeClient.ANDROID_MUSIC) {
+            "https://music.youtube.com/youtubei/v1/player"
+        } else {
+            "https://www.youtube.com/youtubei/v1/player"
+        }
+        val origin = if (client == YouTubeClient.WEB_REMIX || client == YouTubeClient.ANDROID_MUSIC) {
+            YouTubeClient.ORIGIN_YOUTUBE_MUSIC
+        } else {
+            "https://www.youtube.com"
+        }
+        httpClient.post(endpoint) {
             contentType(ContentType.Application.Json)
             headers {
                 append("X-Goog-Api-Format-Version", "1")
                 append("X-YouTube-Client-Name", client.clientId)
                 append("X-YouTube-Client-Version", client.clientVersion)
-                append("X-Origin", YouTubeClient.ORIGIN_YOUTUBE_MUSIC)
-                append("Referer", YouTubeClient.ORIGIN_YOUTUBE_MUSIC + "/")
-                visitorData?.let { append("X-Goog-Visitor-Id", it) }
-                if (client.loginSupported) {
-                    cookie?.let { cookie ->
-                        append("cookie", cookie)
-                        if ("SAPISID" !in cookieMap) return@let
-                        val currentTime = System.currentTimeMillis() / 1000
-                        val sapisidHash = sha1("$currentTime ${cookieMap["SAPISID"]} ${YouTubeClient.ORIGIN_YOUTUBE_MUSIC}")
-                        append("Authorization", "SAPISIDHASH ${currentTime}_${sapisidHash}")
-                    }
-                }
+                append("X-Origin", origin)
+                append("Referer", "$origin/")
+                visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
             }
             userAgent(client.userAgent)
             parameter("prettyPrint", false)

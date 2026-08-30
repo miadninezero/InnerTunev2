@@ -46,18 +46,17 @@ object TranslationHelper {
             val traditionalChinese = Locale.getDefault().toLanguageTag().replace("-Hant", "") == "zh-TW"
             lyrics.copy(
                 lyrics = if (isSynced) {
-                    LyricsUtils.parseLyrics(lyrics.lyrics).map {
-                        val translated = translator.translate(it.text).await()
-                        it.copy(
-                            text = if (traditionalChinese) ZhConverterUtil.toTraditional(translated) else translated
-                        )
-                    }.joinToString(separator = "\n") {
-                        "[%02d:%02d.%03d]${it.text}".format(it.time / 60000, (it.time / 1000) % 60, it.time % 1000)
+                    LyricsUtils.parseLyrics(lyrics.lyrics).map { entry ->
+                        val translated: String = translator.translate(entry.text).await()
+                        val text: String = if (traditionalChinese) ZhConverterUtil.toTraditional(translated) else translated
+                        entry.copy(text = text)
+                    }.joinToString(separator = "\n") { entry ->
+                        "[%02d:%02d.%03d]${entry.text}".format(entry.time / 60000, (entry.time / 1000) % 60, entry.time % 1000)
                     }
                 } else {
                     lyrics.lyrics.lines()
-                        .map {
-                            val translated = translator.translate(it).await()
+                        .map { line: String ->
+                            val translated: String = translator.translate(line).await()
                             if (traditionalChinese) ZhConverterUtil.toTraditional(translated) else translated
                         }
                         .joinToString(separator = "\n")
@@ -71,8 +70,8 @@ object TranslationHelper {
     suspend fun clearModels() {
         val modelManager = RemoteModelManager.getInstance()
         val downloadedModels = modelManager.getDownloadedModels(TranslateRemoteModel::class.java).await()
-        downloadedModels.forEach {
-            modelManager.deleteDownloadedModel(it).await()
+        downloadedModels.forEach { model ->
+            modelManager.deleteDownloadedModel(model).await()
         }
     }
 }

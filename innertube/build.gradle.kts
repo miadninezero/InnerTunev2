@@ -10,7 +10,7 @@ group = "com.zionhuang.innertube"
 version = "1.1.0"
 
 kotlin {
-    jvmToolchain(17)
+    jvmToolchain(21)
 }
 
 dependencies {

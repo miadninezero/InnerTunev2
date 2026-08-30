@@ -212,20 +212,18 @@ fun StorageSettings(
             },
         )
 
-        if (BuildConfig.FLAVOR != "foss") {
-            PreferenceGroupTitle(
-                title = stringResource(R.string.translation_models)
-            )
+        PreferenceGroupTitle(
+            title = stringResource(R.string.translation_models)
+        )
 
-            PreferenceEntry(
-                title = { Text(stringResource(R.string.clear_translation_models)) },
-                onClick = {
-                    coroutineScope.launch(Dispatchers.IO) {
-                        TranslationHelper.clearModels()
-                    }
-                },
-            )
-        }
+        PreferenceEntry(
+            title = { Text(stringResource(R.string.clear_translation_models)) },
+            onClick = {
+                coroutineScope.launch(Dispatchers.IO) {
+                    TranslationHelper.clearModels()
+                }
+            },
+        )
     }
 
     TopAppBar(

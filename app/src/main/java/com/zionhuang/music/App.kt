@@ -81,15 +81,7 @@ class App : Application(), ImageLoaderFactory {
                 .map { it[VisitorDataKey] }
                 .distinctUntilChanged()
                 .collect { visitorData ->
-                    val resolved = visitorData
-                        ?.takeIf { it.isNotBlank() && it != "null" }
-                        ?: YouTube.visitorData().getOrNull()?.also { newVisitorData ->
-                            dataStore.edit { settings ->
-                                settings[VisitorDataKey] = newVisitorData
-                            }
-                        }
-                        ?: YouTube.DEFAULT_VISITOR_DATA
-                    YouTube.visitorData = resolved
+                    YouTube.visitorData = visitorData?.takeIf { it.isNotBlank() && it != "null" }
                 }
         }
         GlobalScope.launch {
@@ -97,7 +89,7 @@ class App : Application(), ImageLoaderFactory {
                 .map { it[InnerTubeCookieKey] }
                 .distinctUntilChanged()
                 .collect { cookie ->
-                    YouTube.cookie = cookie
+                    YouTube.cookie = cookie?.takeIf { it.isNotBlank() }
                 }
         }
     }
