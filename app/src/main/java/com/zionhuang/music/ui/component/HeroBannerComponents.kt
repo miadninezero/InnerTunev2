@@ -68,7 +68,7 @@ fun HeroBanner(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "TODAY'S PICK",
+                text = "FEATURED TRACK",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.W300,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),

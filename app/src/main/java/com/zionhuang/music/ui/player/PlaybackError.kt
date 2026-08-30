@@ -36,8 +36,13 @@ fun PlaybackError(
             tint = MaterialTheme.colorScheme.error
         )
 
+        val errorMessage = error.message?.takeIf { it.isNotBlank() && it != "null" }
+            ?: error.cause?.message?.takeIf { it.isNotBlank() && it != "null" }
+            ?: error.cause?.cause?.message?.takeIf { it.isNotBlank() && it != "null" }
+            ?: stringResource(R.string.error_unknown)
+
         Text(
-            text = error.cause?.cause?.message ?: stringResource(R.string.error_unknown),
+            text = errorMessage,
             style = MaterialTheme.typography.bodyMedium
         )
     }

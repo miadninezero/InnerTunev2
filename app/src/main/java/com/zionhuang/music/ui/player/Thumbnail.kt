@@ -103,7 +103,7 @@ fun Thumbnail(
             error?.let { error ->
                 PlaybackError(
                     error = error,
-                    retry = playerConnection.player::prepare
+                    retry = { playerConnection.retryCurrentItem() }
                 )
             }
         }

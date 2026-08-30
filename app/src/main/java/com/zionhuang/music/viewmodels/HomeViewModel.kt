@@ -63,6 +63,28 @@ class HomeViewModel @Inject constructor(
     val allLocalItems = MutableStateFlow<List<LocalItem>>(emptyList())
     val allYtItems = MutableStateFlow<List<YTItem>>(emptyList())
 
+    private fun isExcludedContent(text: String?): Boolean {
+        if (text == null) return false
+        val lower = text.lowercase().trim()
+        return lower.contains("community playlist") ||
+                lower.contains("trending community") ||
+                lower.contains("today's") ||
+                lower.contains("todays") ||
+                lower.contains("today") ||
+                lower.contains("ghazal") ||
+                lower.contains("sufi") ||
+                lower.contains("indian")
+    }
+
+    private fun isExcludedItem(item: YTItem): Boolean {
+        return when (item) {
+            is SongItem -> isExcludedContent(item.title) || item.artists.any { isExcludedContent(it.name) } || isExcludedContent(item.album?.name)
+            is AlbumItem -> isExcludedContent(item.title) || item.artists.orEmpty().any { isExcludedContent(it.name) }
+            is ArtistItem -> isExcludedContent(item.title)
+            is PlaylistItem -> isExcludedContent(item.title) || isExcludedContent(item.author?.name)
+        }
+    }
+
     private suspend fun load() {
         isLoading.value = true
 
@@ -297,16 +319,20 @@ class HomeViewModel @Inject constructor(
         // Fetch YouTube Charts / Trending when available
         YouTube.browse("FEmusic_charts", null).onSuccess { chartsResult ->
             for (chartItem in chartsResult.items) {
-                if (chartItem.items.isNotEmpty()) {
-                    dynamicSections.add(
-                        HomePage.Section(
-                            title = chartItem.title ?: context.getString(R.string.stats),
-                            label = null,
-                            thumbnail = null,
-                            endpoint = null,
-                            items = chartItem.items.filterExplicit(hideExplicit).take(15)
+                val chartTitle = chartItem.title ?: context.getString(R.string.stats)
+                if (!isExcludedContent(chartTitle)) {
+                    val filteredChartItems = chartItem.items.filterExplicit(hideExplicit).filterNot(::isExcludedItem)
+                    if (filteredChartItems.isNotEmpty()) {
+                        dynamicSections.add(
+                            HomePage.Section(
+                                title = chartTitle,
+                                label = null,
+                                thumbnail = null,
+                                endpoint = null,
+                                items = filteredChartItems.take(15)
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -314,7 +340,14 @@ class HomeViewModel @Inject constructor(
         // Fetch YouTube Home Sections
         YouTube.home().onSuccess { page ->
             val filteredPage = page.filterExplicit(hideExplicit)
-            dynamicSections.addAll(filteredPage.sections)
+            for (section in filteredPage.sections) {
+                if (!isExcludedContent(section.title)) {
+                    val filteredSectionItems = section.items.filterNot(::isExcludedItem)
+                    if (filteredSectionItems.isNotEmpty()) {
+                        dynamicSections.add(section.copy(items = filteredSectionItems))
+                    }
+                }
+            }
         }.onFailure {
             reportException(it)
         }
@@ -334,6 +367,7 @@ class HomeViewModel @Inject constructor(
                 .toHashSet()
 
             val sortedNewReleases = page.newReleaseAlbums
+                .filterNot(::isExcludedItem)
                 .sortedBy { album ->
                     if (album.artists.orEmpty().any { it.id in bookmarkedArtistIds }) 0
                     else if (album.artists.orEmpty().any { it.id in libraryArtistIds }) 1
@@ -341,8 +375,11 @@ class HomeViewModel @Inject constructor(
                 }
                 .filterExplicit(hideExplicit)
 
+            val filteredMoodAndGenres = page.moodAndGenres.filterNot { isExcludedContent(it.title) }
+
             explorePage.value = page.copy(
-                newReleaseAlbums = sortedNewReleases
+                newReleaseAlbums = sortedNewReleases,
+                moodAndGenres = filteredMoodAndGenres
             )
 
             // Fallback for Quick Picks if local database is empty: populate with new release songs/albums

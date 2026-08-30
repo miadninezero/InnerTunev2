@@ -136,6 +136,10 @@ class PlayerConnection(
         player.playWhenReady = true
     }
 
+    fun retryCurrentItem() {
+        service.retryCurrentItem()
+    }
+
     override fun onPlaybackStateChanged(state: Int) {
         playbackState.value = state
         error.value = player.playerError

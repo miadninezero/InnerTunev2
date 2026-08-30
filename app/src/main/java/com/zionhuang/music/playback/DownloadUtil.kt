@@ -92,7 +92,7 @@ class DownloadUtil @Inject constructor(
              }
         }
 
-        songUrlCache[mediaId]?.takeIf { it.second < System.currentTimeMillis() }?.let {
+        songUrlCache[mediaId]?.takeIf { it.second > System.currentTimeMillis() }?.let {
             return@Factory dataSpec.withUri(it.first.toUri())
         }
 
@@ -140,7 +140,9 @@ class DownloadUtil @Inject constructor(
             )
         }
 
-        songUrlCache[mediaId] = format.url!! to playerResponse.streamingData!!.expiresInSeconds * 1000L
+        val expiresInSeconds: Long = playerResponse.streamingData?.expiresInSeconds?.toLong() ?: 21600L
+        val safeExpiresAt: Long = System.currentTimeMillis() + (expiresInSeconds * 1000L) - 60_000L
+        songUrlCache[mediaId] = format.url!! to safeExpiresAt
         dataSpec.withUri(format.url!!.toUri())
     }
     val downloadNotificationHelper = DownloadNotificationHelper(context, ExoDownloadService.CHANNEL_ID)

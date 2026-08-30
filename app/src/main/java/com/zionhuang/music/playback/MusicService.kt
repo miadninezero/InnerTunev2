@@ -31,6 +31,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -40,9 +41,7 @@ import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
-import androidx.media3.extractor.ExtractorsFactory
-import androidx.media3.extractor.mkv.MatroskaExtractor
-import androidx.media3.extractor.mp4.FragmentedMp4Extractor
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaController
@@ -192,6 +191,10 @@ class MusicService : MediaLibraryService(),
 
     private var discordRpc: DiscordRPC? = null
 
+    private val songUrlCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
+    private var retryCount = 0
+    private var lastFailedMediaId: String? = null
+
     override fun onCreate() {
         super.onCreate()
         setMediaNotificationProvider(
@@ -200,9 +203,21 @@ class MusicService : MediaLibraryService(),
                     setSmallIcon(R.drawable.small_icon)
                 }
         )
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                30_000,
+                120_000,
+                1_500,
+                3_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(30_000, true)
+            .build()
+
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(createMediaSourceFactory())
             .setRenderersFactory(createRenderersFactory())
+            .setLoadControl(loadControl)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(
@@ -589,19 +604,60 @@ class MusicService : MediaLibraryService(),
     }
 
     override fun onPlayerError(error: PlaybackException) {
-        android.util.Log.e("MusicService", "Player error code=${error.errorCode}, message=${error.message}", error)
-        com.zionhuang.music.utils.LogBuffer.appendToLiveFile(this, "MusicService", "E", "Player error code=${error.errorCode}, message=${error.message}", error)
-        // On remote or no-stream errors, the cached format URL is likely expired/invalid.
-        // Delete it so the next play attempt fetches a fresh one instead of reusing a dead URL.
-        if (error.errorCode == PlaybackException.ERROR_CODE_REMOTE_ERROR ||
-            error.errorCode == ERROR_CODE_NO_STREAM
-        ) {
+        val currentId = currentMediaMetadata.value?.id
+        val currentPos = player.currentPosition
+        val currentIdx = player.currentMediaItemIndex
+
+        android.util.Log.e("MusicService", "Player error code=${error.errorCode}, message=${error.message}, pos=$currentPos, id=$currentId", error)
+        com.zionhuang.music.utils.LogBuffer.appendToLiveFile(
+            this,
+            "MusicService",
+            "E",
+            "Player error code=${error.errorCode}, message=${error.message}, pos=$currentPos, id=$currentId",
+            error
+        )
+
+        // On any player error, invalidate cached stream URL and database format for this mediaId
+        // so that retries or future requests fetch a fresh, non-expired URL from YouTube/Piped
+        if (currentId != null) {
+            songUrlCache.remove(currentId)
             scope.launch(Dispatchers.IO) {
-                currentMediaMetadata.value?.id?.let { mediaId ->
-                    database.query { deleteFormat(mediaId) }
-                }
+                database.query { deleteFormat(currentId) }
             }
         }
+
+        // Automatic retry logic: retry up to 2 times for transient/network/URL expiration issues
+        val isSameSong = (currentId != null && currentId == lastFailedMediaId)
+        if (isSameSong) {
+            retryCount++
+        } else {
+            lastFailedMediaId = currentId
+            retryCount = 1
+        }
+
+        val canRetry = retryCount <= 2 && isInternetAvailable(this) && currentId != null
+
+        if (canRetry) {
+            android.util.Log.i("MusicService", "Attempting automatic stream recovery for $currentId (attempt $retryCount) at $currentPos ms")
+            com.zionhuang.music.utils.LogBuffer.appendToLiveFile(
+                this,
+                "MusicService",
+                "I",
+                "Attempting automatic stream recovery for $currentId (attempt $retryCount) at $currentPos ms"
+            )
+            scope.launch(Dispatchers.Main) {
+                delay(300L * retryCount)
+                if (player.currentMediaItemIndex == currentIdx) {
+                    if (currentIdx >= 0) {
+                        player.seekTo(currentIdx, currentPos)
+                    }
+                    player.prepare()
+                    player.playWhenReady = true
+                }
+            }
+            return
+        }
+
         if (dataStore.get(AutoSkipNextOnErrorKey, false) &&
             isInternetAvailable(this) &&
             player.hasNextMediaItem()
@@ -610,6 +666,24 @@ class MusicService : MediaLibraryService(),
             player.prepare()
             player.playWhenReady = true
         }
+    }
+
+    fun retryCurrentItem() {
+        val currentId = currentMediaMetadata.value?.id
+        val currentPos = player.currentPosition
+        val currentIdx = player.currentMediaItemIndex
+        if (currentId != null) {
+            songUrlCache.remove(currentId)
+            scope.launch(Dispatchers.IO) {
+                database.query { deleteFormat(currentId) }
+            }
+        }
+        retryCount = 0
+        if (currentIdx >= 0) {
+            player.seekTo(currentIdx, currentPos)
+        }
+        player.prepare()
+        player.playWhenReady = true
     }
 
     private fun createCacheDataSource(): CacheDataSource.Factory =
@@ -624,8 +698,13 @@ class MusicService : MediaLibraryService(),
                             OkHttpDataSource.Factory(
                                 OkHttpClient.Builder()
                                     .proxy(YouTube.proxy)
+                                    .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                    .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+                                    .retryOnConnectionFailure(true)
+                                    .followRedirects(true)
+                                    .followSslRedirects(true)
                                     .build()
-                            ).setUserAgent("com.google.android.apps.youtube.vr.oculus/1.61.48 (Linux; U; Android 12; en_US; Oculus Quest 3; Build/SQ3A.220605.009.A1; Cronet/132.0.6808.3)")
+                            )
                         )
                     )
             )
@@ -633,12 +712,12 @@ class MusicService : MediaLibraryService(),
             .setFlags(FLAG_IGNORE_CACHE_ON_ERROR)
 
     private fun createDataSourceFactory(): DataSource.Factory {
-        val songUrlCache = HashMap<String, Pair<String, Long>>()
         return ResolvingDataSource.Factory(createCacheDataSource()) { dataSpec ->
             val mediaId = dataSpec.key ?: error("No media id")
+            val length = if (dataSpec.length >= 0) dataSpec.length else 1
 
-            if (downloadCache.isCached(mediaId, dataSpec.position, if (dataSpec.length >= 0) dataSpec.length else 1) ||
-                playerCache.isCached(mediaId, dataSpec.position, CHUNK_LENGTH)
+            if (downloadCache.isCached(mediaId, dataSpec.position, length) ||
+                playerCache.isCached(mediaId, dataSpec.position, length)
             ) {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
                 return@Factory dataSpec
@@ -646,11 +725,10 @@ class MusicService : MediaLibraryService(),
 
             songUrlCache[mediaId]?.takeIf { it.second > System.currentTimeMillis() }?.let {
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
-                return@Factory dataSpec.withUri(it.first.toUri()).subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
+                return@Factory dataSpec.withUri(it.first.toUri())
             }
 
             // Check whether format exists so that users from older version can view format details
-            // There may be inconsistent between the downloaded file and the displayed info if user change audio quality frequently
             val playedFormat = runBlocking(Dispatchers.IO) { database.format(mediaId).first() }
             val playerResponse = runBlocking(Dispatchers.IO) {
                 YouTube.player(mediaId)
@@ -688,7 +766,7 @@ class MusicService : MediaLibraryService(),
                     playerResponse.streamingData?.adaptiveFormats?.find {
                         // Use itag to identify previously played format
                         it.itag == playedFormat.itag
-                    }
+                    } ?: playerResponse.streamingData?.adaptiveFormats?.filter { it.isAudio }?.maxByOrNull { it.bitrate }
                 } else {
                     playerResponse.streamingData?.adaptiveFormats
                         ?.filter { it.isAudio }
@@ -699,7 +777,8 @@ class MusicService : MediaLibraryService(),
                                 AudioQuality.LOW -> -1
                             } + (if (it.mimeType.startsWith("audio/webm")) 10240 else 0) // prefer opus stream
                         }
-                } ?: throw PlaybackException(getString(R.string.error_no_stream), null, ERROR_CODE_NO_STREAM)
+                } ?: playerResponse.streamingData?.formats?.firstOrNull()
+                  ?: throw PlaybackException(getString(R.string.error_no_stream), null, ERROR_CODE_NO_STREAM)
 
             val formatUrl = format.url
             if (formatUrl.isNullOrEmpty()) {
@@ -722,17 +801,17 @@ class MusicService : MediaLibraryService(),
             }
             scope.launch(Dispatchers.IO) { recoverSong(mediaId, playerResponse) }
 
-            songUrlCache[mediaId] = format.url!! to (System.currentTimeMillis() + playerResponse.streamingData!!.expiresInSeconds * 1000L)
-            dataSpec.withUri(format.url!!.toUri()).subrange(dataSpec.uriPositionOffset, CHUNK_LENGTH)
+            val expiresInSeconds: Long = playerResponse.streamingData?.expiresInSeconds?.toLong() ?: 21600L
+            val safeExpiresAt: Long = System.currentTimeMillis() + (expiresInSeconds * 1000L) - 60_000L
+            songUrlCache[mediaId] = formatUrl to safeExpiresAt
+            dataSpec.withUri(formatUrl.toUri())
         }
     }
 
     private fun createMediaSourceFactory() =
         DefaultMediaSourceFactory(
             createDataSourceFactory(),
-            ExtractorsFactory {
-                arrayOf(MatroskaExtractor(), FragmentedMp4Extractor())
-            }
+            DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)
         )
 
     private fun createRenderersFactory() =
